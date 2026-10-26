@@ -23,6 +23,8 @@ hiddenimports = [
     "PIL",
     "openpyxl",
     "numpy",
+    "tools.offline_guard",
+    "tools.smoke_batch",
 ]
 
 for package in (

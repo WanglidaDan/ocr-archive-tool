@@ -25,19 +25,40 @@ def _write_startup_error(text):
     return written
 
 
+def _emit(text):
+    stream = sys.stdout
+    if stream is None:
+        return
+    payload = (text + "\n").encode("utf-8", "replace")
+    buffer = getattr(stream, "buffer", None)
+    if buffer is None:
+        stream.write(text + "\n")
+        return
+    buffer.write(payload)
+    buffer.flush()
+
+
 def _check_models():
     """Load the bundled RapidOCR models and exit. No window, no network."""
     from rapidocr_onnxruntime import RapidOCR
 
     RapidOCR()
-    print("models-ok")
+    _emit("models-ok")
     return 0
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if getattr(sys, "frozen", False) or "--smoke" in argv:
+        from tools.offline_guard import install
+
+        install()
     if "--check" in argv:
         return _check_models()
+    if "--smoke" in argv:
+        from tools.smoke_batch import run_packaged
+
+        return run_packaged([item for item in argv if item != "--smoke"])
     from app import main as app_main
 
     app_main()
@@ -53,8 +74,10 @@ if __name__ == "__main__":
         import traceback
 
         text = traceback.format_exc()
-        if "--check" in sys.argv:
-            print(text, file=sys.stderr)
+        if "--check" in sys.argv or "--smoke" in sys.argv:
+            _write_startup_error(text)
+            if sys.stderr is not None:
+                print(text, file=sys.stderr)
             sys.exit(1)
         written = _write_startup_error(text)
         if sys.platform == "win32":

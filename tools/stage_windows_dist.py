@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGING = ROOT / "packaging"
 REQUIRED_DLLS = ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")
+OPTIONAL_DLLS = ("msvcp140_1.dll", "msvcp140_2.dll", "concrt140.dll", "vcomp140.dll")
 TEMPLATE_NOTE = "请将标准模板放在这里.txt"
 
 
@@ -27,7 +28,7 @@ def _dll_sources():
 def _copy_runtime_dlls(dist):
     copied = []
     missing = []
-    for name in REQUIRED_DLLS:
+    for name in REQUIRED_DLLS + OPTIONAL_DLLS:
         target = dist / name
         internal = dist / "_internal" / name
         if target.is_file() or internal.is_file():
@@ -43,7 +44,8 @@ def _copy_runtime_dlls(dist):
             None,
         )
         if source is None:
-            missing.append(name)
+            if name in REQUIRED_DLLS:
+                missing.append(name)
             continue
         data = source.read_bytes()
         target.write_bytes(data)

@@ -34,6 +34,8 @@ jobs:
             throw "ArchiveDesk.exe --check did not exit within 120 seconds"
           }
           if ($proc.ExitCode -ne 0) { throw "ArchiveDesk.exe --check exited $($proc.ExitCode)" }
+      - name: Require VC++ DLLs inside the zip and no template
+        run: python tools/verify_base_zip.py dist/ArchiveDesk-base.zip
       - name: Upload base zip
         uses: actions/upload-artifact@v4
         with:
@@ -63,8 +65,17 @@ jobs:
         with:
           name: ArchiveDesk-base
           path: dist
-      - name: Headless 10-PDF smoke
-        run: python tools/smoke_batch.py --report dist/smoke-report.json --zip dist/ArchiveDesk-base.zip
+      - name: Headless smoke inside the package
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/run_windows_smoke.ps1
+      - name: Remove the smoke account and firewall rule
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-NetFirewallRule -DisplayName "M2ArchiveDeskOffline" -ErrorAction SilentlyContinue
+          Stop-ScheduledTask -TaskName "M2Smoke" -ErrorAction SilentlyContinue
+          Unregister-ScheduledTask -TaskName "M2Smoke" -Confirm:$false -ErrorAction SilentlyContinue
+          net user m2smoke /delete | Out-Null
       - name: Upload smoke report
         uses: actions/upload-artifact@v4
         with:

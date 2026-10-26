@@ -13,12 +13,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from PySide6.QtWidgets import QApplication
-from app import Window
 from fixtures import example_template
-from tools.inject_template import inject, main as inject_main
-from tools.smoke_batch import write_pdfs
+from PySide6.QtWidgets import QApplication
+
+from app import Window
+from tools import offline_guard
+from tools.inject_template import inject
+from tools.inject_template import main as inject_main
+from tools.smoke_batch import run_packaged, write_pdfs
 from tools.stage_windows_dist import archive_names, make_zip, prepare_dist
+from tools.verify_base_zip import inspect_zip
+from tools.verify_base_zip import main as verify_main
 
 
 class PackageTemplateTests(unittest.TestCase):
@@ -107,6 +112,84 @@ class PackageTemplateTests(unittest.TestCase):
             self.assertEqual(window.template_path, str(beside))
             self.assertIsNone(window.template_notice)
             window.close()
+
+    def test_offline_guard_refuses_remote_and_restores(self):
+        import socket
+
+        original = socket.socket.connect
+        self.addCleanup(offline_guard.uninstall)
+        offline_guard.uninstall()
+        offline_guard.install()
+        offline_guard.install()
+
+        class Dummy:
+            pass
+
+        with self.assertRaises(OSError) as raised:
+            socket.socket.connect(Dummy(), ("8.8.8.8", 53))
+        self.assertIn("离线模式拒绝联网", str(raised.exception))
+        self.assertEqual(len(offline_guard.remote_attempts), 1)
+        with self.assertRaises(Exception) as loopback:
+            socket.socket.connect(Dummy(), ("127.0.0.1", 9))
+        self.assertNotIn("离线模式拒绝联网", str(loopback.exception))
+        with self.assertRaises(Exception) as local_name:
+            socket.socket.connect(Dummy(), ("localhost", 9))
+        self.assertNotIn("离线模式拒绝联网", str(local_name.exception))
+        offline_guard.uninstall()
+        self.assertIs(socket.socket.connect, original)
+        self.assertEqual(offline_guard.remote_attempts, [])
+
+    def test_verify_base_zip_requires_runtime_dlls_and_rejects_xlsx(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            bad = folder / "bad.zip"
+            with zipfile.ZipFile(bad, "w") as archive:
+                archive.writestr("ArchiveDesk/ArchiveDesk.exe", b"MZ")
+                archive.writestr("ArchiveDesk/templates/standard_template.xlsx", b"PK")
+            info = inspect_zip(bad)
+            self.assertTrue(info["xlsx"])
+            self.assertIn("vcruntime140.dll", info["missing_dlls"])
+            self.assertEqual(verify_main([str(bad)]), 1)
+            good = folder / "good.zip"
+            with zipfile.ZipFile(good, "w") as archive:
+                archive.writestr("ArchiveDesk/vcruntime140.dll", b"a")
+                archive.writestr("ArchiveDesk/_internal/vcruntime140_1.dll", b"b")
+                archive.writestr("ArchiveDesk/msvcp140.dll", b"c")
+                archive.writestr(
+                    "ArchiveDesk/templates/请将标准模板放在这里.txt", "note"
+                )
+            info = inspect_zip(good)
+            self.assertEqual(info["missing_dlls"], [])
+            self.assertEqual(info["xlsx"], [])
+            self.assertEqual(
+                info["required_dlls"]["vcruntime140.dll"],
+                "ArchiveDesk/vcruntime140.dll",
+            )
+            self.assertEqual(verify_main([str(good)]), 0)
+
+    def test_packaged_smoke_writes_a_report_without_a_console(self):
+        self.addCleanup(offline_guard.uninstall)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            report = folder / "smoke-report.json"
+            with patch("sys.stdout", None):
+                code = run_packaged(
+                    [
+                        "--pdf-dir",
+                        str(folder / "pdfs"),
+                        "--out-dir",
+                        str(folder / "out"),
+                        "--report",
+                        str(report),
+                        "--template",
+                        str(folder / "missing.xlsx"),
+                    ]
+                )
+            self.assertEqual(code, 2)
+            body = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(body["remote_socket_attempts"], 0)
+            self.assertFalse(body["elevated"])
+            self.assertIn("模板不存在", body["error"])
 
 
 if __name__ == "__main__":
