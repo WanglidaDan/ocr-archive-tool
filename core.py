@@ -5,6 +5,7 @@ import re
 import urllib.request
 from pathlib import Path
 
+from errors import chinese_message
 from extraction import extract, extract_details, reading_rows
 
 VERSION = "0.3"
@@ -59,6 +60,19 @@ class Cancelled(Exception):
     pass
 
 
+def _pdf_tail_incomplete(path):
+    """A readable PDF ends with %%EOF. A cut-off file does not."""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, 2)
+            size = handle.tell()
+            handle.seek(max(0, size - 4096))
+            tail = handle.read()
+    except OSError:
+        return False
+    return b"%%EOF" not in tail
+
+
 class Processor:
     def __init__(self):
         self.engine = None
@@ -80,14 +94,14 @@ class Processor:
         if Path(path).suffix.lower() == ".pdf":
             try:
                 pdf = fitz.open(path)
-            except Exception:
-                raise ValueError("PDF无法读取（文件已损坏或不是有效的 PDF）。")
+            except Exception as error:
+                raise ValueError(chinese_message(error))
             if pdf.needs_pass:
                 pdf.close()
                 raise ValueError("PDF已加密，请先解密再导入。")
             if pdf.page_count < 1:
                 pdf.close()
-                raise ValueError("PDF没有页面，无法识别。")
+                raise ValueError("文件已损坏，没有可读取的页面。")
         if self.engine is None:
             self.engine = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
         texts, scores, rows = [], [], []
@@ -122,24 +136,34 @@ class Processor:
             )
 
         try:
-            if pdf is not None:
-                for n, p in enumerate(pdf, 1):
-                    if cancelled():
-                        raise Cancelled()
-                    scale = min(2.5, 2600 / max(p.rect.width, p.rect.height))
-                    pix = p.get_pixmap(
-                        matrix=fitz.Matrix(scale, scale),
-                        alpha=False,
-                        colorspace=fitz.csRGB,
-                    )
-                    page(
-                        Image.frombytes("RGB", (pix.width, pix.height), pix.samples), n
-                    )
-            else:
-                with Image.open(path) as image:
-                    for n in range(getattr(image, "n_frames", 1)):
-                        image.seek(n)
-                        page(ImageOps.exif_transpose(image.copy()), n + 1)
+            try:
+                if pdf is not None:
+                    for n, p in enumerate(pdf, 1):
+                        if cancelled():
+                            raise Cancelled()
+                        scale = min(2.5, 2600 / max(p.rect.width, p.rect.height))
+                        pix = p.get_pixmap(
+                            matrix=fitz.Matrix(scale, scale),
+                            alpha=False,
+                            colorspace=fitz.csRGB,
+                        )
+                        page(
+                            Image.frombytes(
+                                "RGB", (pix.width, pix.height), pix.samples
+                            ),
+                            n,
+                        )
+                else:
+                    with Image.open(path) as image:
+                        for n in range(getattr(image, "n_frames", 1)):
+                            image.seek(n)
+                            page(ImageOps.exif_transpose(image.copy()), n + 1)
+            except Cancelled:
+                raise
+            except Exception as error:
+                if pdf is not None:
+                    raise ValueError("文件已损坏，无法读取页面。") from error
+                raise ValueError(chinese_message(error)) from error
         finally:
             if pdf is not None:
                 pdf.close()
@@ -147,6 +171,8 @@ class Processor:
             raise Cancelled()
         text = "\n\n".join(texts)
         if not scores:
+            if pdf is not None and _pdf_tail_incomplete(path):
+                raise ValueError("文件已损坏，内容不完整。")
             raise ValueError("未识别到文字，请检查扫描清晰度、方向或重新扫描。")
         values, evidence, warnings = extract_details(
             text, fields, len(texts), rows=rows
@@ -161,7 +187,9 @@ class Processor:
                 )
                 warnings.extend(extra)
             except Exception as e:
-                warnings.append(f"本地模型提取失败，已保留OCR与规则结果：{e}")
+                warnings.append(
+                    "本地模型提取失败，已保留OCR与规则结果：" + chinese_message(e)
+                )
         return {
             "text": text,
             "values": values,

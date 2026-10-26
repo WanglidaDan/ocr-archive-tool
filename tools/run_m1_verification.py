@@ -65,6 +65,14 @@ def _cpu():
     return model, count
 
 
+def _workbook_bytes(folder):
+    return {
+        path.name: path.read_bytes()
+        for path in Path(folder).glob("*.xlsx")
+        if not path.name.startswith("导出清单_")
+    }
+
+
 def _cell(value):
     if value is None:
         return ""
@@ -288,7 +296,7 @@ def run():
             first_manifest = (
                 manifest_path.read_bytes() if manifest_path.is_file() else b""
             )
-            before = {path.name: path.read_bytes() for path in output.glob("*.xlsx")}
+            before = _workbook_bytes(output)
             retry_started = time.monotonic()
             window.retry_failed()
             deadline = time.monotonic() + 300
@@ -302,7 +310,7 @@ def run():
         if folder_arg != str(remembered):
             problems.append("未从上次文件夹开始选择")
         dialogs.stop()
-        after = {path.name: path.read_bytes() for path in output.glob("*.xlsx")}
+        after = _workbook_bytes(output)
         second_manifest = manifest_path.read_bytes() if manifest_path.is_file() else b""
         window.dirty = False
         window.close()
@@ -462,9 +470,9 @@ def _assemble(
     if review_count and unreviewed != review_count:
         problems.append("未核对对话框份数不一致")
     retry_labels = dialogs.buttons[0] if dialogs.buttons else []
-    retry_button = int("重试失败文件" in retry_labels)
+    retry_button = int("只重试失败项" in retry_labels)
     if failure_rows and not retry_button:
-        problems.append("结束对话框没有重试失败文件")
+        problems.append("结束对话框没有只重试失败项")
     failed_indexes = [
         index for index, row in enumerate(rows) if row.get("状态") == "失败"
     ]

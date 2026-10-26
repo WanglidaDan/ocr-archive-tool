@@ -54,19 +54,39 @@ def standard_value(field, value, choices):
     return value
 
 
-def inspect_template(path, sheet=None):
+def _open_workbook(path):
+    import zipfile
     from openpyxl import load_workbook
 
-    book = load_workbook(path)
+    if not Path(path).is_file():
+        raise ValueError(
+            "找不到模板："
+            + str(path)
+            + "。导出已停用。请在「字段与模型设置」中重新选择模板。"
+        )
+    try:
+        return load_workbook(path)
+    except zipfile.BadZipFile:
+        raise ValueError(
+            "导出模板无法读取（文件已损坏或不是有效的 Excel）。"
+            "导出已停用。请在「字段与模型设置」中重新选择模板。"
+        )
+    except OSError as error:
+        from errors import chinese_message
+
+        raise ValueError(chinese_message(error))
+
+
+def inspect_template(path, sheet=None):
+    book = _open_workbook(path)
     names = [s.title for s in book if s.max_column > 1 and s.cell(1, 1).value]
-    if sheet in names:
-        selected = sheet
-    elif DEFAULT_SHEET in names:
-        selected = DEFAULT_SHEET
-    else:
-        selected = names[0] if names else None
-    if selected is None:
-        raise ValueError("没有找到包含表头的目录工作表")
+    requested = sheet or DEFAULT_SHEET
+    if requested not in names:
+        book.close()
+        raise ValueError(
+            f"模板中没有「{requested}」工作表，已停止导出，不会改用其他工作表。"
+        )
+    selected = requested
     ws = book[selected]
     headers = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
     if any(not h for h in headers) or len(set(headers)) != len(headers):
@@ -272,12 +292,8 @@ def _write_patches(template_path, sheet_name, patches_by_row, output_path):
 
 
 def _load_sheet(template_path, sheet):
-    from openpyxl import load_workbook
-
-    if not Path(template_path).is_file():
-        raise ValueError("找不到模板：" + str(template_path))
     meta = inspect_template(template_path, sheet)
-    book = load_workbook(template_path)
+    book = _open_workbook(template_path)
     return meta, book, book[meta["sheet"]]
 
 

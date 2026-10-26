@@ -16,7 +16,7 @@ from catalog_defaults import (
     effective_defaults,
     validate_defaults,
 )
-from catalog_map import map_piece
+from catalog_map import format_file_size, map_piece
 from fixtures import (
     INNER_HEADERS,
     PIECE_HEADERS,
@@ -119,7 +119,11 @@ class FakeTemplateTests(unittest.TestCase):
             self.assertEqual(mapped["临时序号"], "3")
             self.assertEqual(mapped["电子文件数量"], "1")
             self.assertEqual(mapped["电子文件关联项"], "扫描件.png")
-            self.assertEqual(mapped["电子文件大小"], "5")
+            self.assertEqual(mapped["电子文件大小"], "1")
+            self.assertEqual(
+                map_piece(record, meta["choices"], 3, size_unit="B")["电子文件大小"],
+                "5",
+            )
             self.assertEqual(mapped["保管期限"], "30年")
             self.assertEqual(mapped["载体类型"], "纸质")
             for field, value in DEFAULTS.items():
@@ -194,6 +198,20 @@ class FakeTemplateTests(unittest.TestCase):
             book.close()
             self.assertEqual(inspect_template(path)["sheet"], "管理类_件")
             self.assertEqual(inspect_template(path, "其他")["sheet"], "其他")
+            renamed = load_workbook(path)
+            renamed["管理类_件"].title = "别的名字"
+            renamed.save(path)
+            renamed.close()
+            with self.assertRaises(ValueError) as missing_sheet:
+                inspect_template(path, "管理类_件")
+            self.assertIn("管理类_件", str(missing_sheet.exception))
+            self.assertIn("不会改用", str(missing_sheet.exception))
+            self.assertEqual(format_file_size(5, "KB"), "1")
+            self.assertEqual(format_file_size(5, "B"), "5")
+            self.assertEqual(format_file_size(20134807, "KB"), "19663")
+            self.assertLessEqual(int(format_file_size(20134807, "KB")), 9999999)
+            self.assertEqual(format_file_size(20134807, "MB"), "19")
+            self.assertGreater(int(format_file_size(20134807, "B")), 9999999)
 
     def test_summary_preserves_template_and_leaves_volumes_empty(self):
         with tempfile.TemporaryDirectory() as tmp:

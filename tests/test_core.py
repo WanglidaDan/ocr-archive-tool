@@ -91,7 +91,8 @@ class Tests(unittest.TestCase):
             document.close()
             with self.assertRaises(ValueError) as corrupt_error:
                 processor.recognize(corrupt, ["文件名称"])
-            self.assertIn("PDF无法读取", str(corrupt_error.exception))
+            self.assertIn("文件已损坏", str(corrupt_error.exception))
+            self.assertNotIn("FileData", str(corrupt_error.exception))
             empty = tmp / "空白.pdf"
             empty.write_bytes(b"%PDF-1.4")
 
@@ -106,12 +107,45 @@ class Tests(unittest.TestCase):
             with patch("fitz.open", return_value=blank):
                 with self.assertRaises(ValueError) as empty_error:
                     processor.recognize(empty, ["文件名称"])
-            self.assertIn("没有页面", str(empty_error.exception))
+            self.assertIn("文件已损坏", str(empty_error.exception))
             self.assertTrue(blank.closed)
             with self.assertRaises(ValueError) as encrypted_error:
                 processor.recognize(encrypted, ["文件名称"])
             self.assertIn("PDF已加密", str(encrypted_error.exception))
             self.assertIsNone(processor.engine)
+            zero = tmp / "零字节.pdf"
+            zero.write_bytes(b"")
+            with self.assertRaises(ValueError) as zero_error:
+                processor.recognize(zero, ["文件名称"])
+            self.assertIn("空", str(zero_error.exception))
+            self.assertNotIn("EmptyFile", str(zero_error.exception))
+            missing = tmp / "不存在.pdf"
+            with patch(
+                "fitz.open",
+                side_effect=FileNotFoundError(2, "No such file", str(missing)),
+            ):
+                with self.assertRaises(ValueError) as missing_error:
+                    processor.recognize(missing, ["文件名称"])
+            self.assertIn("找不到文件", str(missing_error.exception))
+            with patch(
+                "fitz.open", side_effect=PermissionError(13, "Permission denied")
+            ):
+                with self.assertRaises(ValueError) as denied_error:
+                    processor.recognize(zero, ["文件名称"])
+            self.assertIn("权限", str(denied_error.exception))
+            self.assertNotIn("Errno", str(denied_error.exception))
+            with patch("fitz.open", side_effect=OSError(28, "No space left on device")):
+                with self.assertRaises(ValueError) as disk_error:
+                    processor.recognize(zero, ["文件名称"])
+            self.assertIn("磁盘空间不足", str(disk_error.exception))
+            self.assertNotIn("Errno", str(disk_error.exception))
+            with patch(
+                "fitz.open", side_effect=__import__("zipfile").BadZipFile("bad")
+            ):
+                with self.assertRaises(ValueError) as zip_error:
+                    processor.recognize(zero, ["文件名称"])
+            self.assertIn("损坏", str(zip_error.exception))
+            self.assertNotIn("BadZip", str(zip_error.exception))
 
     def test_cancel(self):
         with self.assertRaises(Cancelled):

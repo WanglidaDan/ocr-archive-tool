@@ -110,6 +110,47 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(v["文件名称"], "")
         self.assertEqual(v["日期"], "2026-10-26")
 
+    def test_owner_from_header_and_any_page_signature(self):
+        text = (
+            "--- 第 1 页 ---\n"
+            "密级：无密级\n"
+            "示例报社文件\n"
+            "庆油档发〔2026〕12号\n"
+            "关于加强档案数字化管理工作的通知\n"
+            "各单位：\n"
+            "为进一步做好相关工作，现将有关事项通知如下。\n"
+            "示例报社\n"
+            "2026年2月4日\n"
+            "--- 第 2 页 ---\n"
+            "附件：工作安排表\n"
+            "（此页为附件）\n"
+        )
+        values, _evidence, warnings = extract_details(
+            text, ["题名", "责任者", "文件编号", "文件日期", "页数", "密级"], 2
+        )
+        self.assertEqual(values["责任者"], "示例报社")
+        self.assertEqual(values["题名"], "关于加强档案数字化管理工作的通知")
+        self.assertEqual(values["文件编号"], "庆油档发〔2026〕12号")
+        self.assertEqual(values["文件日期"], "2026-02-04")
+        self.assertEqual(values["页数"], "2")
+        self.assertEqual(values["密级"], "无密级")
+        self.assertFalse(any("责任者未识别" in item for item in warnings))
+        spaced = (
+            "--- 第 1 页 ---\n"
+            "示 例 机 关文件\n"
+            "档发〔2026〕8号\n"
+            "关于调整机构设置的决定\n"
+            "示 例 机 关\n"
+            "2026年5月6日\n"
+            "--- 第 2 页 ---\n"
+            "（此页为附件）\n"
+        )
+        owner = extract_details(spaced, ["责任者"], 2)[0]["责任者"]
+        self.assertEqual(owner, "示例机关")
+        missing, _evidence, warnings = extract_details("正文没有落款", ["责任者"], 1)
+        self.assertEqual(missing["责任者"], "")
+        self.assertTrue(any("责任者未识别" in item for item in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

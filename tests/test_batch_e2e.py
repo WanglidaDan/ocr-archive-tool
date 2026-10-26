@@ -210,7 +210,12 @@ class BatchExportFlowTests(unittest.TestCase):
             report = summaries[0][0]
             self.assertIn("成功 10 份，失败 0 份。", report)
             self.assertNotIn("失败：", report)
-            names = sorted(path.name for path in output.glob("*.xlsx"))
+            names = sorted(
+                path.name
+                for path in output.glob("*.xlsx")
+                if not path.name.startswith("导出清单_")
+            )
+            self.assertEqual(len(list(output.glob("导出清单_*.xlsx"))), 1)
             self.assertEqual(
                 names, [f"file-{number:02d}.xlsx" for number in range(1, 11)]
             )
@@ -238,6 +243,8 @@ class BatchExportFlowTests(unittest.TestCase):
                 "通过 · 列宽一致",
             )
             for workbook in sorted(output.glob("*.xlsx")):
+                if workbook.name.startswith("导出清单_"):
+                    continue
                 self.assertIn(workbook.stem, by_stem)
                 ok, lines = compare_workbooks(template, workbook)
                 self.assertTrue(ok, workbook.name + "\n" + "\n".join(lines))

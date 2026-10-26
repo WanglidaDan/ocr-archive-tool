@@ -5,10 +5,14 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from batch_export import (
+    LIST_COLUMNS,
     MANIFEST_COLUMNS,
     describe_batch,
+    describe_excel_name,
+    export_mapped_separate,
     export_separate,
     manifest_rows,
+    write_export_list,
     write_manifest,
 )
 from extraction import extract_details
@@ -147,7 +151,7 @@ class StrictBatchTests(unittest.TestCase):
             )
             self.assertIn("成功 1 份，失败 2 份。", summary)
             self.assertIn("bad.pdf：", summary)
-            self.assertIn("miss.pdf：尚未识别成功，未导出", summary)
+            self.assertIn("miss.pdf：识别失败，未导出", summary)
             self.assertNotIn("待核对", summary)
 
     def test_summary_counts_review_separately_from_failure(self):
@@ -293,6 +297,76 @@ class StrictBatchTests(unittest.TestCase):
             self.assertEqual(written[1]["对应Excel名"], "ok.xlsx")
             self.assertEqual(written[0]["状态"], "失败")
             self.assertEqual(written[1]["状态"], "成功")
+
+    def test_reserved_and_long_names_are_explained(self):
+        long_name = "a" * 150 + ".pdf"
+        records = [
+            {"path": "CON.pdf", "values": {"密级": "非涉密", "题名": "保留名"}},
+            {"path": long_name, "values": {"密级": "非涉密", "题名": "超长"}},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            results = export_separate(records, tmp, TEMPLATE, "管理类_件")
+            self.assertEqual(results[0]["excel_name"], "_CON.xlsx")
+            self.assertIn("保留名", results[0]["name_note"])
+            self.assertEqual(len(Path(results[1]["excel_name"]).stem), 80)
+            self.assertIn("截断", results[1]["name_note"])
+            listed = write_export_list(tmp, records, results)
+            self.assertTrue(listed.name.startswith("导出清单_"))
+            book = __import__("openpyxl").load_workbook(listed)
+            sheet = book.active
+            headers = [cell.value for cell in sheet[1]]
+            self.assertEqual(tuple(headers), LIST_COLUMNS)
+            rows = list(sheet.iter_rows(min_row=2, values_only=True))
+            self.assertEqual(rows[0][0], "CON.pdf")
+            self.assertIn("_CON.xlsx", rows[0][1])
+            self.assertIn("保留名", rows[0][1])
+            self.assertEqual(rows[0][2], "成功")
+            self.assertIn("截断", rows[1][1])
+            self.assertIn(long_name, rows[1][0])
+            book.close()
+            self.assertIn("保留名", describe_excel_name("CON.pdf", "_CON.xlsx"))
+
+    def test_template_removed_between_files_keeps_going(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            template = tmp / "模板.xlsx"
+            template.write_bytes(Path(TEMPLATE).read_bytes())
+            folder = tmp / "out"
+            first = {
+                "path": "甲.pdf",
+                "status": "已核对",
+                "text": "甲",
+                "values": {"密级": "非涉密", "题名": "甲"},
+            }
+            second = {
+                "path": "乙.pdf",
+                "status": "已核对",
+                "text": "乙",
+                "values": {"密级": "非涉密", "题名": "乙"},
+            }
+            done = export_mapped_separate([first], folder, template, "管理类_件")
+            template.unlink()
+            failed = export_mapped_separate([second], folder, template, "管理类_件")
+            self.assertFalse(done[0]["error"])
+            self.assertIn("找不到模板", failed[0]["error"])
+            self.assertNotIn("Error", failed[0]["error"])
+            self.assertTrue((folder / "甲.xlsx").is_file())
+            self.assertFalse(list(folder.glob("乙*.xlsx")))
+
+    def test_permission_error_stays_chinese(self):
+        records = [{"path": "只读.pdf", "values": {"密级": "非涉密"}}]
+
+        def denied(*_args, **_kwargs):
+            raise PermissionError(13, "Permission denied")
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("batch_export.os.open", denied),
+        ):
+            results = export_separate(records, tmp, TEMPLATE, "管理类_件")
+        self.assertIn("权限", results[0]["error"])
+        self.assertNotIn("Errno", results[0]["error"])
+        self.assertNotIn("Permission", results[0]["error"])
 
 
 if __name__ == "__main__":

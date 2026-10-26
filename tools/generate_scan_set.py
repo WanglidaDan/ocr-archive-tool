@@ -19,6 +19,7 @@ import fitz
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from catalog_map import format_file_size
 from fixtures import cjk_font_path
 
 
@@ -275,7 +276,7 @@ def case_records():
             "filename": "损坏.pdf",
             "traits": ["损坏"],
             "pages": 0,
-            "expect_failure": "PDF无法读取",
+            "expect_failure": "文件已损坏",
             "fields": {},
         },
     )
@@ -315,7 +316,9 @@ def generate(folder):
         ]
         _write_pdf(folder / filename, images)
         by_name[filename]["bytes"] = (folder / filename).stat().st_size
-        by_name[filename]["fields"]["电子文件大小"] = str(by_name[filename]["bytes"])
+        by_name[filename]["fields"]["电子文件大小"] = format_file_size(
+            by_name[filename]["bytes"], "KB"
+        )
     _write_encrypted(folder / "加密.pdf")
     (folder / "损坏.pdf").write_bytes(b"this is not a pdf")
     payload = []

@@ -25,9 +25,11 @@ DATE = re.compile(
 CN_DATE = re.compile(
     r"([〇零○ＯO一二三四五六七八九]{4})年([一二三四五六七八九十]{1,3})月([一二三四五六七八九十]{1,3})日"
 )
-ORG = re.compile(
-    r"^[\u4e00-\u9fffA-Za-z0-9·（）()]{0,60}(?:档案馆|委员会|办公室|管理局|管理处|公司|分公司|研究院|中心|分局|分厂|作业区|项目部|部门|大学|学校)$"
+ORG_SUFFIX = (
+    r"档案馆|委员会|办公室|管理局|管理处|分公司|公司|研究院|中心|分局|分厂|"
+    r"作业区|项目部|部门|大学|学校|报社|机关|集团|医院|学院"
 )
+ORG = re.compile(rf"^[\u4e00-\u9fffA-Za-z0-9·（）()]{{0,40}}(?:{ORG_SUFFIX})$")
 TITLE_END = re.compile(
     r"(通知|通报|报告|请示|批复|函|决定|决议|意见|办法|规定|方案|计划|纪要|总结|细则|公告|公示|说明|申请书|合同|协议)$"
 )
@@ -38,6 +40,55 @@ def clean(value):
     # OCR often inserts spaces between Chinese characters and numeric glyphs.
     s = re.sub(r"(?<=\d)\s+(?=\d)", "", s)
     return s.strip()
+
+
+def compact_cjk(value):
+    """Drop spaces that OCR inserts between Chinese characters."""
+    return re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", clean(value))
+
+
+def _is_date_line(value):
+    text = clean(value)
+    compact = re.sub(r"\s+", "", text)
+    return bool(
+        DATE.fullmatch(text)
+        or DATE.fullmatch(compact)
+        or CN_DATE.fullmatch(compact)
+        or CN_DATE.fullmatch(text)
+    )
+
+
+def _is_org_line(value):
+    text = compact_cjk(value)
+    if not text or text.startswith("各"):
+        return False
+    if any(ch in text for ch in "，。；;、：:"):
+        return False
+    return bool(ORG.fullmatch(text))
+
+
+def _header_org(rows):
+    """文头「单位文件」on the first page, before the body."""
+    for row in rows[:6]:
+        match = re.fullmatch(
+            r"([\u4e00-\u9fffA-Za-z0-9·（）()]{2,40})文件",
+            compact_cjk(row["clean"]),
+        )
+        if match and _is_org_line(match[1]):
+            return match[1], row
+    return None, None
+
+
+def _signature_org(lines):
+    """落款：an organization line followed by a date, on any page."""
+    for index, row in enumerate(lines[:-1]):
+        nxt = lines[index + 1]
+        if nxt.get("page") != row.get("page"):
+            continue
+        text = compact_cjk(row["clean"])
+        if _is_org_line(text) and _is_date_line(nxt["clean"]):
+            return text, row, nxt
+    return None, None, None
 
 
 def canonical(field):
@@ -273,28 +324,21 @@ def extract_details(text, fields, pages, rows=None, additional=None):
                     by_kind["文件名称"][-1]["raw"] = "\n".join(r["text"] for r in used)
                     by_kind["文件名称"][-1]["joined"] = title
     if "责任单位" not in labelled:
-        # Only a standalone last-page signature followed by its date, never a
-        # random organization mentioned in the body.
-        last = [r for r in lines if r["page"] == pages]
-        for i, row in enumerate(last[-8:]):
-            tail = last[-8:]
-            s = row["clean"]
-            if (
-                len(s) >= 3
-                and ORG.fullmatch(s)
-                and i + 1 < len(tail)
-                and (
-                    DATE.fullmatch(tail[i + 1]["clean"])
-                    or CN_DATE.fullmatch(tail[i + 1]["clean"])
-                )
-            ):
-                add("责任单位", row["text"], row, "末页落款候选")
-                if "日期" not in labelled:
-                    add("日期", tail[i + 1]["text"], tail[i + 1], "末页落款日期候选")
+        # Signature on any page, then the first-page 文头. Attachment pages
+        # often push the 落款 off the last page, so the last page alone is not
+        # enough. A body mention without a following date is ignored.
+        org, org_row, date_row = _signature_org(lines)
+        source = "落款候选"
+        if org is None:
+            org, org_row = _header_org(first)
+            date_row = None
+            source = "文头单位候选"
+        if org:
+            add("责任单位", org, org_row, source)
+            if date_row is not None and "日期" not in labelled:
+                add("日期", date_row["text"], date_row, "落款日期候选")
     if official and "日期" not in labelled:
-        signature_dates = [
-            c for c in by_kind.get("日期", []) if c["source"] == "末页落款日期候选"
-        ]
+        signature_dates = [c for c in by_kind.get("日期", []) if "落款" in c["source"]]
         if signature_dates:
             by_kind["日期"] = signature_dates
     # Per-document classification: only explicit header marks, no default.
@@ -421,6 +465,8 @@ def extract_details(text, fields, pages, rows=None, additional=None):
         else:
             value = ""
             status = "未提取"
+            if kind == "责任单位":
+                warnings.append("责任者未识别，请人工核对")
         values[field] = value
         evidence[field] = {"status": status, "candidates": valid + invalid}
     number = next((values[f] for f in fields if canonical(f) == "文号"), "")

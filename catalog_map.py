@@ -35,7 +35,27 @@ def _chosen(value, field, choices):
     return text
 
 
-def map_piece(record, choices, order, defaults=None):
+def format_file_size(nbytes, unit="KB"):
+    """Convert a byte size for the 电子文件大小 cell.
+
+    The standard template rejects values above 9999999, so bytes overflow once
+    a file is about 9.5MB. KB is the default until the owner confirms the unit.
+    A non-empty file never becomes 0 when the unit is coarser than a byte.
+    """
+    chosen = str(unit or "KB").upper()
+    if chosen not in {"B", "KB", "MB"}:
+        chosen = "KB"
+    size = int(nbytes)
+    if chosen == "B":
+        return str(size)
+    scale = 1024 if chosen == "KB" else 1024 * 1024
+    value = round(size / scale)
+    if size > 0 and value < 1:
+        value = 1
+    return str(value)
+
+
+def map_piece(record, choices, order, defaults=None, size_unit="KB"):
     """Build cell values for one 管理类_件 row.
 
     Blank fields are omitted so the template cell stays empty. A value already
@@ -60,7 +80,7 @@ def map_piece(record, choices, order, defaults=None):
             put("年度", normal[:4])
     path = record.get("path") or ""
     if path and Path(path).is_file():
-        put("电子文件大小", Path(path).stat().st_size)
+        put("电子文件大小", format_file_size(Path(path).stat().st_size, size_unit))
     put("题名", values.get("题名") or values.get("文件名称"))
     put("责任者", responsible)
     put("页数", values.get("页数"))

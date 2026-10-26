@@ -155,6 +155,7 @@ class UITests(unittest.TestCase):
             self.assertIn("示例单位A", window.choices["归档单位"])
             self.assertIn("示例单位A", window.choices["归档单位(系统生成)"])
             self.assertTrue(window.export_btn.isEnabled())
+            self.assertTrue(window.template_banner.isHidden())
             window.close()
 
     def test_missing_template_disables_export(self):
@@ -173,6 +174,9 @@ class UITests(unittest.TestCase):
             self.assertFalse(window.summary_btn.isEnabled())
             self.assertFalse(window.overwrite_box.isChecked())
             self.assertIn("导出已停用", window.export_btn.toolTip())
+            self.assertFalse(window.template_banner.isHidden())
+            self.assertIn("找不到", window.template_banner.text())
+            self.assertEqual(window.retry_btn.text(), "只重试失败项")
             window.close()
 
     def test_builtin_defaults_and_sheet(self):
@@ -365,7 +369,8 @@ class UITests(unittest.TestCase):
             self.assertFalse(worker.isRunning())
             self.assertEqual(set(found), {0, 1})
             self.assertEqual(found[0]["status"], "处理失败")
-            self.assertIn("PDF无法读取", found[0]["warning"])
+            self.assertIn("文件已损坏", found[0]["warning"])
+            self.assertNotIn("FileData", found[0]["warning"])
             self.assertEqual(found[1]["status"], "处理失败")
             self.assertIn("PDF已加密", found[1]["warning"])
 
@@ -493,7 +498,7 @@ class UITests(unittest.TestCase):
                 self.assertIn("甲.pdf：PDF已加密，请先解密再导入。", box.text())
                 labels = [button.text() for button in box.findChildren(QPushButton)]
                 self.assertIn("打开输出文件夹", labels)
-                self.assertIn("重试失败文件", labels)
+                self.assertIn("只重试失败项", labels)
                 self.assertIn("关闭", labels)
 
             self._click_dialog("打开输出文件夹", checks)
@@ -501,7 +506,7 @@ class UITests(unittest.TestCase):
                 action = show_export_result(window, summary, tmp, True)
             self.assertEqual(action, "open")
             opener.assert_called_once_with(tmp)
-            self._click_dialog("重试失败文件")
+            self._click_dialog("只重试失败项")
             self.assertEqual(show_export_result(window, summary, tmp, True), "retry")
             self._click_dialog("关闭")
             self.assertEqual(show_export_result(window, summary, tmp, False), "close")
@@ -649,6 +654,127 @@ class UITests(unittest.TestCase):
             self.assertFalse(window.records[0]["export_error"])
             self.assertFalse(window.records[1]["export_error"])
             window.close()
+
+    def test_missing_owner_is_highlighted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            window = Window(Path(tmp) / "project.json")
+            window.records = [
+                {
+                    "path": str(Path(tmp) / "空白.pdf"),
+                    "status": "待核对",
+                    "text": "原文",
+                    "values": {"责任单位": ""},
+                    "evidence": {},
+                }
+            ]
+            window.current = 0
+            window.load_record()
+            self.assertIn("fff3a0", window.inputs["责任单位"].styleSheet())
+            window.inputs["责任单位"].setText("示例单位")
+            window.changed("责任单位")
+            self.assertNotIn("fff3a0", window.inputs["责任单位"].styleSheet())
+            window.close()
+
+    def test_second_export_skips_succeeded_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            window = self._template_window(tmp)
+            output = tmp / "out"
+            output.mkdir()
+            good = tmp / "good.pdf"
+            bad = tmp / "bad.pdf"
+            good.write_bytes(b"1")
+            bad.write_bytes(b"2")
+            existing = output / "good.xlsx"
+            existing.write_bytes(b"already-exported")
+
+            def record(path, title):
+                return {
+                    "path": str(path),
+                    "status": "已核对",
+                    "text": "原文",
+                    "pages": 1,
+                    "values": {"题名": title, "密级": "非涉密"},
+                }
+
+            window.records = [
+                {
+                    **record(good, "成功件"),
+                    "export_status": "成功",
+                    "export_path": str(existing),
+                    "export_error": "",
+                },
+                record(bad, "失败件"),
+            ]
+
+            def capture(parent, summary, folder, can_retry):
+                return "close"
+
+            with (
+                patch("app.show_export_result", capture),
+                patch("app.confirm_unreviewed", return_value=True),
+                patch("app.QFileDialog.getExistingDirectory", return_value=str(output)),
+            ):
+                window.export()
+                self._wait_idle(window, 30)
+            self.assertEqual(existing.read_bytes(), b"already-exported")
+            self.assertTrue((output / "bad.xlsx").is_file())
+            self.assertFalse((output / "good(1).xlsx").exists())
+            self.assertEqual(window.records[1]["export_status"], "成功")
+            window.close()
+
+    def test_export_worker_survives_a_missing_template(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            records = [
+                {
+                    "path": str(folder / "甲.pdf"),
+                    "text": "甲",
+                    "status": "已核对",
+                    "values": {"题名": "甲"},
+                },
+                {
+                    "path": str(folder / "乙.pdf"),
+                    "text": "乙",
+                    "status": "已核对",
+                    "values": {"题名": "乙"},
+                },
+            ]
+            worker = ExportWorker(
+                list(enumerate(records)),
+                str(folder),
+                str(folder / "missing.xlsx"),
+                "管理类_件",
+            )
+            worker.start()
+            deadline = time.monotonic() + 30
+            while worker.isRunning() and time.monotonic() < deadline:
+                self.app.processEvents()
+                time.sleep(0.02)
+            self.assertFalse(worker.isRunning())
+            self.assertEqual(len(worker.results), 2)
+            self.assertTrue(
+                all("找不到模板" in item["error"] for item in worker.results)
+            )
+            self.assertTrue(worker.isFinished())
+
+    def test_file_size_unit_defaults_to_kb_and_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = self._write_state(
+                Path(tmp) / "project.json",
+                use_template=True,
+                template_path=str(example_template()),
+                template_sheet="管理类_件",
+            )
+            window = Window(state)
+            self.assertEqual(window.file_size_unit, "KB")
+            window.file_size_unit = "MB"
+            window.dirty = True
+            window.save()
+            window.close()
+            restored = Window(state)
+            self.assertEqual(restored.file_size_unit, "MB")
+            restored.close()
 
 
 if __name__ == "__main__":
