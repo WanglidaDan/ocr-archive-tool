@@ -35,7 +35,8 @@ def export_separate(
                 stem = "_" + stem
             number = 1
             while True:
-                name = stem + "_目录" + ("" if number == 1 else f"_{number}") + ".xlsx"
+                # abc.pdf -> abc.xlsx. A name already in the folder gets _2, _3, ...
+                name = stem + ("" if number == 1 else f"_{number}") + ".xlsx"
                 reserved = folder / name
                 try:
                     fd = os.open(reserved, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -64,6 +65,54 @@ def export_separate(
         results.append(item)
         progress(index, item)
     return results
+
+
+def describe_batch(records, results, stopped=False):
+    """Chinese end-of-batch counts: succeeded, failed, and still needing review.
+
+    待核对 counts exported files whose record is not 已核对. A failure is not
+    also counted as needing review. Files that never reached export are listed
+    under 失败 so a partial batch is visible.
+    """
+    produced = {
+        os.path.normcase(item.get("source", "")): item for item in results or []
+    }
+    succeeded = 0
+    failed_lines = []
+    review_names = []
+    for record in records or []:
+        name = Path(record.get("path", "")).name or "未命名"
+        item = produced.get(os.path.normcase(record.get("path", "")))
+        if item is None:
+            if (
+                stopped
+                and record.get("text")
+                and record.get("status")
+                not in (
+                    "待识别",
+                    "处理失败",
+                )
+            ):
+                failed_lines.append(name + "：已停止，未导出")
+            else:
+                failed_lines.append(name + "：尚未识别成功，未导出")
+            continue
+        if item.get("error"):
+            failed_lines.append(name + "：" + item["error"])
+            continue
+        succeeded += 1
+        if record.get("status") != "已核对":
+            review_names.append(name)
+    lines = [
+        f"成功 {succeeded} 份，失败 {len(failed_lines)} 份，待核对 {len(review_names)} 份。",
+        "每份文件对应一个 Excel，文件名与源文件相同，不覆盖已有文件。",
+    ]
+    if failed_lines:
+        lines.append("失败：")
+        lines.extend(failed_lines)
+    if review_names:
+        lines.append("待核对：" + "、".join(review_names))
+    return "\n".join(lines)
 
 
 def _with_mapping(records, template, sheet, defaults=None):

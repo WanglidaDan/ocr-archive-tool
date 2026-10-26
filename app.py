@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QCheckBox,
 )
-from batch_export import export_mapped_separate, write_summary
+from batch_export import describe_batch, export_mapped_separate, write_summary
 from catalog_defaults import (
     DEFAULTS,
     DEFAULT_SHEET,
@@ -163,7 +163,7 @@ class ExportWorker(QThread):
         for index, record in self.jobs:
             if self.isInterruptionRequested():
                 break
-            self.message.emit("正在分开导出 · " + Path(record["path"]).name)
+            self.message.emit("正在导出 · " + Path(record["path"]).name)
             result = export_mapped_separate(
                 [record],
                 self.folder,
@@ -272,7 +272,7 @@ class Window(QMainWindow):
         titlebox = QVBoxLayout()
         titlebox.addWidget(label("让档案，从纸面走向有序", "title"))
         titlebox.addWidget(
-            label("扫描件采集工作台  /  导入 → 识别 → 核对 → 导出", "subtitle")
+            label("扫描件采集工作台  /  导入 → 识别 → 一键导出", "subtitle")
         )
         top.addLayout(titlebox)
         top.addStretch()
@@ -295,8 +295,8 @@ class Window(QMainWindow):
         actions.addStretch()
         self.delete_btn = button("移除", self.remove)
         actions.addWidget(self.delete_btn)
-        actions.addWidget(button("分开导出 Excel", self.export))
-        actions.addWidget(button("汇总导出 Excel", self.export_summary))
+        actions.addWidget(button("导出 Excel", self.export, True))
+        actions.addWidget(button("汇总导出（可选）", self.export_summary))
         actions.addWidget(button("核对记录", lambda: self.export(True)))
         content.addLayout(actions)
         self.table = QTableWidget(0, 4)
@@ -805,18 +805,17 @@ class Window(QMainWindow):
             for r in self.records
             if r.get("text") and r["status"] not in ("处理失败", "待识别")
         ]
-        if not records:
+        if not self.records:
             QMessageBox.information(
-                self, "暂无可导出结果", "请先完成至少一份文件的识别。"
+                self, "暂无可导出结果", "请先导入并完成至少一份文件的识别。"
             )
             return
-        skipped = len(self.records) - len(records)
-        pending = sum(r["status"] != "已核对" for r in records)
-        if (pending or skipped) and QMessageBox.question(
-            self,
-            "导出范围确认",
-            f"将导出 {len(records)} 份记录，其中 {pending} 份尚未核对。\n{skipped} 份未识别或失败的记录不导出。\n是否继续？",
-        ) != QMessageBox.Yes:
+        if not report and not records:
+            QMessageBox.information(
+                self,
+                "批量导出结果",
+                describe_batch(self.records, []),
+            )
             return
         if not report:
             if not self.use_template:
@@ -827,7 +826,7 @@ class Window(QMainWindow):
                 )
                 return
             folder = QFileDialog.getExistingDirectory(
-                self, "选择输出文件夹：一份PDF对应一个原模板Excel"
+                self, "选择输出文件夹：每个 PDF 导出一个同名 Excel"
             )
             if not folder:
                 return
@@ -886,19 +885,12 @@ class Window(QMainWindow):
         self.set_busy(False)
         self.refresh()
         self.save()
-        results = self.export_worker.results
-        failed = [r for r in results if r["error"]]
-        done = len(results) - len(failed)
-        self.status.setText(f"分开导出完成：成功{done}份，失败{len(failed)}份")
-        details = "\n".join(Path(r["source"]).name + "：" + r["error"] for r in failed)
-        if self.export_worker.isInterruptionRequested():
-            details = "已停止，未处理文件可再次导出。\n" + details
-        QMessageBox.information(
-            self,
-            "批量导出结果",
-            f"成功 {done} 份，失败 {len(failed)} 份。每份文件独立使用原模板。\n"
-            + details,
-        )
+        stopped = self.export_worker.isInterruptionRequested()
+        text = describe_batch(self.records, self.export_worker.results, stopped=stopped)
+        self.status.setText(text.splitlines()[0])
+        if stopped:
+            text = "已停止，未处理文件可再次导出。\n" + text
+        QMessageBox.information(self, "批量导出结果", text)
 
     def export_summary(self):
         import copy

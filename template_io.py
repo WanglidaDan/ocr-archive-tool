@@ -284,7 +284,7 @@ def _load_sheet(template_path, sheet):
 def export_template(path, records, template_path, sheet):
     """Patch one data row. Copy every other OOXML member byte-for-byte."""
     if len(records) != 1:
-        raise ValueError("原模板模式每个Excel仅对应一份文件，请使用批量分开导出")
+        raise ValueError("原模板模式每个Excel仅对应一份文件，请使用批量导出")
     if Path(path).resolve() == Path(template_path).resolve():
         raise ValueError("不能覆盖原模板")
     meta, book, ws = _load_sheet(template_path, sheet)

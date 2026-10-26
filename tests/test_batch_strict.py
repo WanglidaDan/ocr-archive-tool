@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from batch_export import export_separate
+from batch_export import describe_batch, export_separate
 from extraction import extract_details
 from fixtures import example_template
 
@@ -73,6 +73,8 @@ class StrictBatchTests(unittest.TestCase):
             results = export_separate(records, tmp, TEMPLATE, "管理类_件")
             self.assertEqual(len(results), 2)
             self.assertTrue(all(not r["error"] for r in results))
+            self.assertEqual(Path(results[0]["output"]).name, "同名.xlsx")
+            self.assertEqual(Path(results[1]["output"]).name, "同名_2.xlsx")
             self.assertNotEqual(results[0]["output"], results[1]["output"])
             for record, result in zip(records, results):
                 b = load_workbook(result["output"])
@@ -111,6 +113,7 @@ class StrictBatchTests(unittest.TestCase):
                     self.assertEqual(aa, zz)
             old = Path(results[0]["output"]).read_bytes()
             more = export_separate(records[:1], tmp, TEMPLATE, "管理类_件")
+            self.assertEqual(Path(more[0]["output"]).name, "同名_3.xlsx")
             self.assertNotEqual(more[0]["output"], results[0]["output"])
             self.assertEqual(Path(results[0]["output"]).read_bytes(), old)
 
@@ -123,7 +126,37 @@ class StrictBatchTests(unittest.TestCase):
             results = export_separate(records, tmp, TEMPLATE, "管理类_件")
             self.assertTrue(results[0]["error"])
             self.assertFalse(results[1]["error"])
-            self.assertEqual(len(list(Path(tmp).glob("*.xlsx"))), 1)
+            self.assertEqual(Path(results[1]["output"]).name, "good.xlsx")
+            self.assertEqual(
+                [path.name for path in Path(tmp).glob("*.xlsx")], ["good.xlsx"]
+            )
+            summary = describe_batch(
+                [
+                    {**records[0], "status": "待核对", "text": "x"},
+                    {**records[1], "status": "已核对", "text": "y"},
+                    {"path": "miss.pdf", "status": "处理失败", "text": ""},
+                ],
+                results,
+            )
+            self.assertIn("成功 1 份，失败 2 份，待核对 0 份。", summary)
+            self.assertIn("bad.pdf：", summary)
+            self.assertIn("miss.pdf：尚未识别成功，未导出", summary)
+            self.assertNotIn("待核对：", summary)
+
+    def test_summary_counts_review_separately_from_failure(self):
+        text = describe_batch(
+            [
+                {"path": "a.pdf", "status": "待核对", "text": "a"},
+                {"path": "b.pdf", "status": "已核对", "text": "b"},
+            ],
+            [
+                {"source": "a.pdf", "output": "a.xlsx", "error": ""},
+                {"source": "b.pdf", "output": "b.xlsx", "error": ""},
+            ],
+        )
+        self.assertIn("成功 2 份，失败 0 份，待核对 1 份。", text)
+        self.assertIn("待核对：a.pdf", text)
+        self.assertNotIn("b.pdf", text.split("待核对：", 1)[-1])
 
     def test_stop_before_start_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
