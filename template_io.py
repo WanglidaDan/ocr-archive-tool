@@ -69,7 +69,8 @@ def _open_workbook(path):
     except zipfile.BadZipFile:
         raise ValueError(
             "导出模板无法读取（文件已损坏或不是有效的 Excel）。"
-            "导出已停用。请在「字段与模型设置」中重新选择模板。"
+            "导出已停用。请在「字段与模型设置」中重新选择模板。\n"
+            "模板路径：" + str(path)
         )
     except OSError as error:
         from errors import chinese_message
@@ -166,10 +167,11 @@ def _patches_for_row(meta, book, ws, fields, row):
                 if dv.type in ("whole", "decimal") and address in dv.sqref:
                     if _outside_bounds(number, dv.formula1, dv.formula2):
                         raise ValueError(field + "超出原模板范围")
-            patches[address] = (
-                "n",
-                str(int(number)) if number.is_integer() else str(number),
-            )
+            if field == "电子文件大小":
+                rendered = str(value).strip()
+            else:
+                rendered = str(int(number)) if number.is_integer() else str(number)
+            patches[address] = ("n", rendered)
         else:
             patches[address] = ("inlineStr", value)
         kind_value = patches[address][1]

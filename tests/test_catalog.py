@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from openpyxl import load_workbook
-from batch_export import export_mapped_separate, write_summary
+from batch_export import export_mapped_separate, export_separate, write_summary
 from catalog_defaults import (
     DEFAULTS,
     DEFAULT_SHEET,
@@ -30,6 +30,15 @@ from tools.require_template import require_standard_template
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = example_template()
+
+
+def _sheet_xml(path):
+    with zipfile.ZipFile(path) as book:
+        return "\n".join(
+            book.read(name).decode("utf-8")
+            for name in book.namelist()
+            if name.startswith("xl/worksheets/")
+        )
 
 
 class FakeTemplateTests(unittest.TestCase):
@@ -120,7 +129,7 @@ class FakeTemplateTests(unittest.TestCase):
             self.assertEqual(mapped["电子文件数量"], "1")
             self.assertEqual(mapped["电子文件关联项"], "扫描件.png")
             self.assertEqual(mapped["电子文件大小"], format_file_size(5))
-            self.assertEqual(mapped["电子文件大小"], "1")
+            self.assertEqual(mapped["电子文件大小"], "0.00")
             self.assertEqual(
                 map_piece(record, meta["choices"], 3, size_unit="B")["电子文件大小"],
                 "5",
@@ -131,7 +140,7 @@ class FakeTemplateTests(unittest.TestCase):
                 map_piece({"path": str(larger), "values": {}}, meta["choices"], 1)[
                     "电子文件大小"
                 ],
-                "1",
+                "0.00",
             )
             self.assertEqual(
                 map_piece(
@@ -140,7 +149,7 @@ class FakeTemplateTests(unittest.TestCase):
                     1,
                     size_unit="KB",
                 )["电子文件大小"],
-                "2",
+                "2.00",
             )
             self.assertEqual(mapped["保管期限"], "30年")
             self.assertEqual(mapped["载体类型"], "纸质")
@@ -224,15 +233,23 @@ class FakeTemplateTests(unittest.TestCase):
                 inspect_template(path, "管理类_件")
             self.assertIn("管理类_件", str(missing_sheet.exception))
             self.assertIn("不会改用", str(missing_sheet.exception))
-            self.assertEqual(format_file_size(5), "1")
-            self.assertEqual(format_file_size(5, "MB"), "1")
-            self.assertEqual(format_file_size(5, "KB"), "1")
+            self.assertEqual(format_file_size(5), "0.00")
+            self.assertEqual(format_file_size(5, "MB"), "0.00")
+            self.assertEqual(format_file_size(5, "KB"), "0.00")
             self.assertEqual(format_file_size(5, "B"), "5")
-            self.assertEqual(format_file_size(20134807), "19")
-            self.assertEqual(format_file_size(20134807, "MB"), "19")
-            self.assertEqual(format_file_size(20134807, "KB"), "19663")
-            self.assertLessEqual(int(format_file_size(20134807, "KB")), 9999999)
+            self.assertEqual(format_file_size(0), "0.00")
+            self.assertEqual(format_file_size(0, "B"), "0")
+            self.assertEqual(format_file_size(297670), "0.28")
+            self.assertEqual(format_file_size(297670, "MB"), "0.28")
+            self.assertEqual(format_file_size(297670, "KB"), "290.69")
+            self.assertEqual(format_file_size(297670, "B"), "297670")
+            self.assertEqual(format_file_size(2 * 1024 * 1024), "2.00")
+            self.assertEqual(format_file_size(20134807), "19.20")
+            self.assertEqual(format_file_size(20134807, "MB"), "19.20")
+            self.assertEqual(format_file_size(20134807, "KB"), "19662.90")
+            self.assertLessEqual(float(format_file_size(20134807, "KB")), 9999999)
             self.assertGreater(int(format_file_size(20134807, "B")), 9999999)
+            self.assertEqual(format_file_size(297670, "GB"), "0.28")
 
     def test_summary_preserves_template_and_leaves_volumes_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -340,6 +357,55 @@ class FakeTemplateTests(unittest.TestCase):
                 self.assertEqual(book["管理类_件"]["D2"].value, "缺行模板")
                 self.assertEqual(book["管理类_件"]["C2"].value, 2)
                 book.close()
+
+    def test_file_size_decimals_stay_in_the_cell_xml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            small = tmp / "不足一兆.pdf"
+            small.write_bytes(b"x" * 297670)
+            exact = tmp / "整两兆.pdf"
+            exact.write_bytes(b"x" * (2 * 1024 * 1024))
+            records = [
+                {
+                    "path": str(path),
+                    "status": "已核对",
+                    "values": {"题名": path.stem, "密级": "非涉密"},
+                }
+                for path in (small, exact)
+            ]
+            results = export_mapped_separate(
+                records, tmp / "out", TEMPLATE, "管理类_件"
+            )
+            expected = {"不足一兆.xlsx": "0.28", "整两兆.xlsx": "2.00"}
+            for item in results:
+                self.assertFalse(item["error"], item["error"])
+                self.assertIn(
+                    "<v>" + expected[item["excel_name"]] + "</v>",
+                    _sheet_xml(item["output"]),
+                )
+            sized = format_file_size(20134807)
+            self.assertEqual(sized, "19.20")
+            written = export_separate(
+                [
+                    {
+                        "path": "十九兆.pdf",
+                        "status": "已核对",
+                        "values": {
+                            "题名": "十九",
+                            "密级": "非涉密",
+                            "电子文件大小": sized,
+                        },
+                    }
+                ],
+                tmp / "out",
+                TEMPLATE,
+                "管理类_件",
+            )
+            self.assertFalse(written[0]["error"], written[0]["error"])
+            xml = _sheet_xml(written[0]["output"])
+            self.assertIn("<v>19.20</v>", xml)
+            self.assertNotIn("<v>19.2</v>", xml)
+            self.assertNotIn("<v>19</v>", xml)
 
     def test_compare_reports_a_structural_change(self):
         with tempfile.TemporaryDirectory() as tmp:

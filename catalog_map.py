@@ -1,5 +1,6 @@
 """Map one recognized scan onto a 管理类_件 row."""
 
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 from catalog_defaults import effective_defaults
@@ -38,8 +39,8 @@ def _chosen(value, field, choices):
 def format_file_size(nbytes, unit="MB"):
     """Convert a byte size for the 电子文件大小 cell.
 
-    The confirmed unit is MB. Settings can still switch to KB or B.
-    A non-empty file never becomes 0 when the unit is coarser than a byte.
+    MB and KB keep two decimal places. A fraction below 1 stays a fraction.
+    B is the exact byte count.
     """
     chosen = str(unit or "MB").upper()
     if chosen not in {"B", "KB", "MB"}:
@@ -48,10 +49,10 @@ def format_file_size(nbytes, unit="MB"):
     if chosen == "B":
         return str(size)
     scale = 1024 if chosen == "KB" else 1024 * 1024
-    value = round(size / scale)
-    if size > 0 and value < 1:
-        value = 1
-    return str(value)
+    value = (Decimal(size) / Decimal(scale)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    return f"{value:.2f}"
 
 
 def map_piece(record, choices, order, defaults=None, size_unit="MB"):

@@ -87,8 +87,11 @@ def _sheet_row(data):
     headers = [_cell(cell.value) for cell in sheet[1]]
     values = {}
     for column, header in enumerate(headers, 1):
-        if header:
-            values[header] = _cell(sheet.cell(2, column).value)
+        raw = sheet.cell(2, column).value
+        if header == "电子文件大小" and isinstance(raw, (int, float)):
+            values[header] = f"{float(raw):.2f}"
+        elif header:
+            values[header] = _cell(raw)
     book.close()
     return values
 

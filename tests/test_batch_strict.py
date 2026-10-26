@@ -370,6 +370,24 @@ class StrictBatchTests(unittest.TestCase):
             self.assertTrue((folder / "甲.xlsx").is_file())
             self.assertFalse(list(folder.glob("乙*.xlsx")))
 
+    def test_corrupt_template_error_names_the_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            template = tmp / "坏模板.xlsx"
+            template.write_bytes(b"not a zip")
+            folder = tmp / "out"
+            record = {
+                "path": "甲.pdf",
+                "status": "已核对",
+                "values": {"题名": "甲", "密级": "非涉密"},
+            }
+            for export in (export_mapped_separate, export_separate):
+                item = export([record], folder, template, "管理类_件")[0]
+                self.assertIn("无法读取", item["error"])
+                self.assertIn("\n模板路径：" + str(template), item["error"])
+                self.assertNotIn(str(template), item["error"].splitlines()[0])
+                self.assertNotIn("BadZipFile", item["error"])
+
     def test_permission_error_stays_chinese(self):
         records = [{"path": "只读.pdf", "values": {"密级": "非涉密"}}]
 

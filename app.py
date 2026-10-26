@@ -247,18 +247,21 @@ class ExportWorker(QThread):
 def template_unavailable_message(path, reason):
     shown = path or "（未记录路径）"
     if reason == "missing":
-        detail = f"找不到已保存的导出模板：{shown}"
+        detail = "找不到已保存的导出模板"
     elif reason == "unreadable":
-        detail = f"导出模板无法读取（文件已损坏或不是有效的 Excel）：{shown}"
+        detail = "导出模板无法读取（文件已损坏或不是有效的 Excel）"
     else:
-        detail = chinese_message(reason).rstrip("。")
-        if shown not in detail:
-            detail += "：" + shown
-    if "导出已停用" in detail:
-        if "重新选择" not in detail:
-            return detail + "。请在「字段与模型设置」中重新选择模板。"
-        return detail if detail.endswith("。") else detail + "。"
-    return detail + "。导出已停用。请在「字段与模型设置」中重新选择模板。"
+        detail = chinese_message(reason).split("模板路径：", 1)[0]
+        if shown:
+            detail = detail.replace("：" + shown, "").replace(shown, "")
+        detail = detail.strip().rstrip("。")
+    if "导出已停用" not in detail:
+        detail += "。导出已停用。请在「字段与模型设置」中重新选择模板。"
+    elif not detail.endswith("。"):
+        detail += "。"
+    if "重新选择" not in detail:
+        detail += "请在「字段与模型设置」中重新选择模板。"
+    return detail + "\n模板路径：" + shown
 
 
 def confirm_unreviewed(parent, count):

@@ -71,6 +71,11 @@ class UITests(unittest.TestCase):
             self.assertEqual(restored.records[0]["values"]["责任单位"], "人工核对单位")
             restored.close()
 
+    def _assert_template_path_line(self, text, path):
+        shown = str(path)
+        self.assertIn("\n模板路径：" + shown, text)
+        self.assertNotIn(shown, text.splitlines()[0])
+
     def _write_state(self, path, **extra):
         payload = {"fields": ["文件名称", "责任单位"], "records": []}
         payload.update(extra)
@@ -120,8 +125,8 @@ class UITests(unittest.TestCase):
             self.assertFalse(window.summary_btn.isEnabled())
             self.assertFalse(window.template_banner.isHidden())
             self.assertIn("无法读取", window.template_banner.text())
-            self.assertIn(str(bad), window.template_notice)
-            self.assertIn(str(bad), window.template_banner.text())
+            self._assert_template_path_line(window.template_notice, bad)
+            self._assert_template_path_line(window.template_banner.text(), bad)
             self.assertNotIn("自定义", window.template_notice)
             window.close()
 
@@ -147,10 +152,12 @@ class UITests(unittest.TestCase):
             self.assertIn("工作表", window.template_notice)
             self.assertNotIn("文件已损坏", window.template_notice)
             self.assertIn("导出已停用", window.template_notice)
+            self._assert_template_path_line(window.template_notice, path)
             self.assertFalse(window.export_btn.isEnabled())
             self.assertFalse(window.summary_btn.isEnabled())
             self.assertFalse(window.template_banner.isHidden())
             self.assertIn("管理类_件", window.template_banner.text())
+            self._assert_template_path_line(window.template_banner.text(), path)
             window.close()
 
     def test_builtin_missing_sheet_names_the_sheet(self):
@@ -202,8 +209,8 @@ class UITests(unittest.TestCase):
                 self.assertIn("导出已停用", window.template_notice)
                 self.assertFalse(window.export_btn.isEnabled())
                 self.assertFalse(window.template_banner.isHidden())
-                self.assertIn(str(builtin), window.template_notice)
-                self.assertIn(str(builtin), window.template_banner.text())
+                self._assert_template_path_line(window.template_notice, builtin)
+                self._assert_template_path_line(window.template_banner.text(), builtin)
                 self.assertNotIn("自定义", window.template_notice)
                 self.assertNotIn("自定义", window.status.text())
                 window.close()
@@ -253,6 +260,10 @@ class UITests(unittest.TestCase):
             self.assertIn("导出已停用", window.export_btn.toolTip())
             self.assertFalse(window.template_banner.isHidden())
             self.assertIn("找不到", window.template_banner.text())
+            self._assert_template_path_line(window.template_notice, tmp / "gone.xlsx")
+            self._assert_template_path_line(
+                window.template_banner.text(), tmp / "gone.xlsx"
+            )
             self.assertEqual(window.template_banner.objectName(), "banner")
             self.assertIn("QLabel#banner {background:#c0392b", STYLE)
             self.assertNotIn("#f4e4c4", STYLE)
