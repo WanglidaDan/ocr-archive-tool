@@ -171,7 +171,14 @@ def export_separate(
     return results
 
 
-MANIFEST_COLUMNS = ("文件名", "源文件完整路径", "状态", "原因", "对应Excel名")
+MANIFEST_COLUMNS = (
+    "文件名",
+    "源文件完整路径",
+    "状态",
+    "原因",
+    "对应Excel名",
+    "导出时间",
+)
 
 
 def manifest_rows(records, results, stopped=False):
@@ -214,6 +221,7 @@ def _manifest_row(name, source, excel, status, reason, note):
         "导出文件名": shown,
         "结果": status,
         "建议操作": suggest_action(reason, status == "成功", note),
+        "导出时间": "",
     }
 
 
@@ -263,26 +271,62 @@ def describe_batch(records, results, stopped=False):
     return "\n".join(lines)
 
 
-def write_manifest(folder, records, results, stopped=False):
-    """Append one batch to 处理清单.csv so a later retry does not erase earlier rows."""
+def _manifest_header(path):
     import csv
+
+    try:
+        with Path(path).open(encoding="utf-8-sig", newline="") as handle:
+            header = next(csv.reader(handle), None)
+    except (OSError, UnicodeError, csv.Error):
+        return ()
+    return tuple(header or ())
+
+
+def _choose_manifest_path(folder):
+    """Append when the header matches. An older header keeps its file and a new one is opened."""
+    primary = folder / "处理清单.csv"
+    if not primary.is_file() or primary.stat().st_size == 0:
+        return primary, False
+    if _manifest_header(primary) == MANIFEST_COLUMNS:
+        return primary, True
+    number = 2
+    while number < 1000:
+        candidate = folder / f"处理清单_{number}.csv"
+        if not candidate.is_file() or candidate.stat().st_size == 0:
+            return candidate, False
+        if _manifest_header(candidate) == MANIFEST_COLUMNS:
+            return candidate, True
+        number += 1
+    raise ValueError("无法写入处理清单")
+
+
+def write_manifest(folder, records, results, stopped=False, exported_at=None):
+    """Append one batch so a later retry does not erase earlier rows.
+
+    Each row records 导出时间. A file whose header is not the current columns,
+    such as an older four-column list, is left untouched and a new file is used.
+    """
+    import csv
+    from datetime import datetime
 
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / "处理清单.csv"
+    path, append = _choose_manifest_path(folder)
     rows = manifest_rows(records, results, stopped=stopped)
-    existing = path.is_file() and path.stat().st_size > 0
+    stamp = exported_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for row in rows:
+        row["导出时间"] = stamp
     # utf-8-sig writes a BOM. Append with plain utf-8 so the BOM is not repeated.
     handle = path.open(
-        "a" if existing else "w",
-        encoding="utf-8" if existing else "utf-8-sig",
+        "a" if append else "w",
+        encoding="utf-8" if append else "utf-8-sig",
         newline="",
     )
     with handle:
         writer = csv.DictWriter(
             handle, fieldnames=MANIFEST_COLUMNS, extrasaction="ignore"
         )
-        if not existing:
+        if not append:
             writer.writeheader()
         writer.writerows(rows)
     return path
@@ -334,7 +378,7 @@ def write_export_list(folder, records, results, stopped=False):
     return path
 
 
-def _with_mapping(records, template, sheet, defaults=None, size_unit="KB"):
+def _with_mapping(records, template, sheet, defaults=None, size_unit="MB"):
     """Map each record on its own so a broken template does not stop the batch."""
     from catalog_map import map_piece
     from template_io import inspect_template
@@ -367,7 +411,7 @@ def export_mapped_separate(
     defaults=None,
     overwrite=False,
     taken=None,
-    size_unit="KB",
+    size_unit="MB",
 ):
     """One workbook per scan, with 管理类_件 values filled from the mapping rules."""
     return export_separate(
@@ -383,7 +427,7 @@ def export_mapped_separate(
 
 
 def write_summary(
-    path, records, template, sheet="管理类_件", defaults=None, size_unit="KB"
+    path, records, template, sheet="管理类_件", defaults=None, size_unit="MB"
 ):
     """Write every scan into rows 2..N of one catalog sheet, defaulting to 管理类_件."""
     from catalog_defaults import DEFAULT_SHEET

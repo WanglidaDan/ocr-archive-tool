@@ -187,7 +187,7 @@ class ExportWorker(QThread):
         sheet,
         defaults=None,
         overwrite=False,
-        size_unit="KB",
+        size_unit="MB",
     ):
         super().__init__()
         self.jobs = jobs
@@ -252,6 +252,8 @@ def template_unavailable_message(path, reason):
         detail = f"导出模板无法读取（文件已损坏或不是有效的 Excel）：{shown}"
     else:
         detail = chinese_message(reason).rstrip("。")
+        if shown not in detail:
+            detail += "：" + shown
     if "导出已停用" in detail:
         if "重新选择" not in detail:
             return detail + "。请在「字段与模型设置」中重新选择模板。"
@@ -351,7 +353,7 @@ class Window(QMainWindow):
         self.catalog_defaults = effective_defaults(None)
         self.export_folder = ""
         self.overwrite_same_name = False
-        self.file_size_unit = "KB"
+        self.file_size_unit = "MB"
         self._export_after_ocr = False
         self._export_indexes = None
         self.template_notice = None
@@ -370,9 +372,9 @@ class Window(QMainWindow):
             self.catalog_defaults = effective_defaults(state.get("catalog_defaults"))
             self.export_folder = state.get("export_folder") or ""
             self.overwrite_same_name = bool(state.get("overwrite_same_name", False))
-            saved_unit = str(state.get("file_size_unit") or "KB").upper()
+            saved_unit = str(state.get("file_size_unit") or "MB").upper()
             self.file_size_unit = (
-                saved_unit if saved_unit in {"B", "KB", "MB"} else "KB"
+                saved_unit if saved_unit in {"B", "KB", "MB"} else "MB"
             )
             self._try_saved_template(saved_template)
         except (OSError, ValueError, KeyError):
@@ -1358,13 +1360,13 @@ class Window(QMainWindow):
         layout.addWidget(label("电子文件大小单位", "section"))
         size_unit = QComboBox()
         size_unit.setObjectName("file-size-unit")
-        size_unit.addItems(["KB", "B", "MB"])
+        size_unit.addItems(["MB", "KB", "B"])
         size_unit.setCurrentText(
-            self.file_size_unit if self.file_size_unit in {"B", "KB", "MB"} else "KB"
+            self.file_size_unit if self.file_size_unit in {"B", "KB", "MB"} else "MB"
         )
         layout.addWidget(size_unit)
         size_hint = label(
-            "默认按 KB 写入，避免超过模板的数值上限。可改为 B 或 MB，单位稍后由负责人确认。",
+            "默认按 MB 写入。可改为 KB 或 B。",
             "subtitle",
         )
         size_hint.setWordWrap(True)

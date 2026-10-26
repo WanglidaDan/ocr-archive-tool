@@ -119,10 +119,28 @@ class FakeTemplateTests(unittest.TestCase):
             self.assertEqual(mapped["临时序号"], "3")
             self.assertEqual(mapped["电子文件数量"], "1")
             self.assertEqual(mapped["电子文件关联项"], "扫描件.png")
+            self.assertEqual(mapped["电子文件大小"], format_file_size(5))
             self.assertEqual(mapped["电子文件大小"], "1")
             self.assertEqual(
                 map_piece(record, meta["choices"], 3, size_unit="B")["电子文件大小"],
                 "5",
+            )
+            larger = Path(tmp) / "较大.png"
+            larger.write_bytes(b"x" * 2048)
+            self.assertEqual(
+                map_piece({"path": str(larger), "values": {}}, meta["choices"], 1)[
+                    "电子文件大小"
+                ],
+                "1",
+            )
+            self.assertEqual(
+                map_piece(
+                    {"path": str(larger), "values": {}},
+                    meta["choices"],
+                    1,
+                    size_unit="KB",
+                )["电子文件大小"],
+                "2",
             )
             self.assertEqual(mapped["保管期限"], "30年")
             self.assertEqual(mapped["载体类型"], "纸质")
@@ -206,11 +224,14 @@ class FakeTemplateTests(unittest.TestCase):
                 inspect_template(path, "管理类_件")
             self.assertIn("管理类_件", str(missing_sheet.exception))
             self.assertIn("不会改用", str(missing_sheet.exception))
+            self.assertEqual(format_file_size(5), "1")
+            self.assertEqual(format_file_size(5, "MB"), "1")
             self.assertEqual(format_file_size(5, "KB"), "1")
             self.assertEqual(format_file_size(5, "B"), "5")
+            self.assertEqual(format_file_size(20134807), "19")
+            self.assertEqual(format_file_size(20134807, "MB"), "19")
             self.assertEqual(format_file_size(20134807, "KB"), "19663")
             self.assertLessEqual(int(format_file_size(20134807, "KB")), 9999999)
-            self.assertEqual(format_file_size(20134807, "MB"), "19")
             self.assertGreater(int(format_file_size(20134807, "B")), 9999999)
 
     def test_summary_preserves_template_and_leaves_volumes_empty(self):

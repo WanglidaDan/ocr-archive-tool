@@ -447,6 +447,55 @@ class StrictBatchTests(unittest.TestCase):
             )
             self.assertEqual([row["状态"] for row in rows], ["成功", "失败", "成功"])
             self.assertNotEqual(rows[0]["源文件完整路径"], rows[1]["源文件完整路径"])
+            self.assertTrue(all(row["导出时间"] for row in rows))
+
+    def test_old_manifest_header_opens_a_new_file_with_export_time(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            old = folder / "处理清单.csv"
+            old.write_text(
+                "文件名,状态,原因,对应Excel名\n甲.pdf,成功,,甲.xlsx\n",
+                encoding="utf-8-sig",
+            )
+            original = old.read_bytes()
+            record = {
+                "path": str(folder / "乙" / "新文件.pdf"),
+                "status": "已核对",
+                "text": "乙",
+                "values": {},
+            }
+            results = [
+                {
+                    "source": record["path"],
+                    "output": str(folder / "新文件.xlsx"),
+                    "excel_name": "新文件.xlsx",
+                    "name_note": "",
+                    "error": "",
+                }
+            ]
+            written = write_manifest(
+                folder, [record], results, exported_at="2026-10-26 09:00:00"
+            )
+            self.assertEqual(written.name, "处理清单_2.csv")
+            self.assertEqual(old.read_bytes(), original)
+            again = write_manifest(
+                folder, [record], results, exported_at="2026-10-26 09:05:00"
+            )
+            self.assertEqual(again, written)
+            self.assertFalse((folder / "处理清单_3.csv").exists())
+            with written.open(encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                self.assertEqual(tuple(reader.fieldnames), MANIFEST_COLUMNS)
+                rows = list(reader)
+            self.assertEqual(
+                [row["导出时间"] for row in rows],
+                ["2026-10-26 09:00:00", "2026-10-26 09:05:00"],
+            )
+            self.assertEqual(rows[0]["文件名"], "新文件.pdf")
+            self.assertEqual(rows[0]["源文件完整路径"], record["path"])
+            self.assertNotIn("甲.pdf", written.read_text(encoding="utf-8-sig"))
+            self.assertIn("甲.pdf", old.read_text(encoding="utf-8-sig"))
+            self.assertNotIn("导出时间", old.read_text(encoding="utf-8-sig"))
 
     def test_stopped_recognition_keeps_its_reason(self):
         rows = manifest_rows(

@@ -120,6 +120,8 @@ class UITests(unittest.TestCase):
             self.assertFalse(window.summary_btn.isEnabled())
             self.assertFalse(window.template_banner.isHidden())
             self.assertIn("无法读取", window.template_banner.text())
+            self.assertIn(str(bad), window.template_notice)
+            self.assertIn(str(bad), window.template_banner.text())
             self.assertNotIn("自定义", window.template_notice)
             window.close()
 
@@ -200,6 +202,8 @@ class UITests(unittest.TestCase):
                 self.assertIn("导出已停用", window.template_notice)
                 self.assertFalse(window.export_btn.isEnabled())
                 self.assertFalse(window.template_banner.isHidden())
+                self.assertIn(str(builtin), window.template_notice)
+                self.assertIn(str(builtin), window.template_banner.text())
                 self.assertNotIn("自定义", window.template_notice)
                 self.assertNotIn("自定义", window.status.text())
                 window.close()
@@ -872,7 +876,7 @@ class UITests(unittest.TestCase):
             )
             self.assertTrue(worker.isFinished())
 
-    def test_file_size_unit_defaults_to_kb_and_persists(self):
+    def test_file_size_unit_defaults_to_mb_and_persists(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = self._write_state(
                 Path(tmp) / "project.json",
@@ -881,14 +885,20 @@ class UITests(unittest.TestCase):
                 template_sheet="管理类_件",
             )
             window = Window(state)
-            self.assertEqual(window.file_size_unit, "KB")
-            window.file_size_unit = "MB"
+            self.assertEqual(window.file_size_unit, "MB")
+            window.file_size_unit = "KB"
             window.dirty = True
             window.save()
             window.close()
             restored = Window(state)
-            self.assertEqual(restored.file_size_unit, "MB")
+            self.assertEqual(restored.file_size_unit, "KB")
             restored.close()
+            payload = json.loads(state.read_text(encoding="utf-8"))
+            payload["file_size_unit"] = "GB"
+            state.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            fallback = Window(state)
+            self.assertEqual(fallback.file_size_unit, "MB")
+            fallback.close()
 
     def test_stop_keeps_completed_recognition(self):
         from core import Cancelled

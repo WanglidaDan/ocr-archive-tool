@@ -317,7 +317,7 @@ def generate(folder):
         _write_pdf(folder / filename, images)
         by_name[filename]["bytes"] = (folder / filename).stat().st_size
         by_name[filename]["fields"]["电子文件大小"] = format_file_size(
-            by_name[filename]["bytes"], "KB"
+            by_name[filename]["bytes"], "MB"
         )
     _write_encrypted(folder / "加密.pdf")
     (folder / "损坏.pdf").write_bytes(b"this is not a pdf")

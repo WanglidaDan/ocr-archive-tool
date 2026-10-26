@@ -35,16 +35,15 @@ def _chosen(value, field, choices):
     return text
 
 
-def format_file_size(nbytes, unit="KB"):
+def format_file_size(nbytes, unit="MB"):
     """Convert a byte size for the 电子文件大小 cell.
 
-    The standard template rejects values above 9999999, so bytes overflow once
-    a file is about 9.5MB. KB is the default until the owner confirms the unit.
+    The confirmed unit is MB. Settings can still switch to KB or B.
     A non-empty file never becomes 0 when the unit is coarser than a byte.
     """
-    chosen = str(unit or "KB").upper()
+    chosen = str(unit or "MB").upper()
     if chosen not in {"B", "KB", "MB"}:
-        chosen = "KB"
+        chosen = "MB"
     size = int(nbytes)
     if chosen == "B":
         return str(size)
@@ -55,7 +54,7 @@ def format_file_size(nbytes, unit="KB"):
     return str(value)
 
 
-def map_piece(record, choices, order, defaults=None, size_unit="KB"):
+def map_piece(record, choices, order, defaults=None, size_unit="MB"):
     """Build cell values for one 管理类_件 row.
 
     Blank fields are omitted so the template cell stays empty. A value already
