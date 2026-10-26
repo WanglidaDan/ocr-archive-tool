@@ -59,6 +59,19 @@ from status_model import (
     not_exportable,
 )
 
+
+def program_directory():
+    """Folder that contains the program. Frozen builds use the exe directory."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def program_template_path():
+    """标准模板放在程序目录旁的 templates 文件夹，不打进安装包。"""
+    return program_directory() / "templates" / "standard_template.xlsx"
+
+
 STYLE = """
 QWidget {font-family:"Microsoft YaHei UI","Noto Sans CJK SC","Arial";font-size:13px;color:#243b43;}
 QMainWindow,QDialog {background:#f4f6f5;}
@@ -347,9 +360,9 @@ class Window(QMainWindow):
         self.loading = False
         self.dirty = False
         self.save_error_shown = False
-        builtin = Path(__file__).resolve().parent / "templates/standard_template.xlsx"
+        beside = program_template_path()
         self.auto_unit = True
-        self.template_path = str(builtin)
+        self.template_path = str(beside)
         self.template_sheet = DEFAULT_SHEET
         self.use_template = False
         self.choices = {}
@@ -362,7 +375,7 @@ class Window(QMainWindow):
         self.template_notice = None
         self.defaults_notice = None
         self._template_notice_shown = False
-        self._try_builtin_template(builtin)
+        self._try_builtin_template(beside)
         try:
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
             self.fields = state["fields"]
@@ -379,7 +392,11 @@ class Window(QMainWindow):
             self.file_size_unit = (
                 saved_unit if saved_unit in {"B", "KB", "MB"} else "MB"
             )
-            self._try_saved_template(saved_template)
+            if beside.is_file():
+                self.template_path = str(beside)
+                self._try_builtin_template(beside)
+            else:
+                self._try_saved_template(saved_template)
         except (OSError, ValueError, KeyError):
             pass
         self._refresh_defaults_notice()
@@ -1520,7 +1537,8 @@ class Window(QMainWindow):
             )
 
     def _try_builtin_template(self, builtin):
-        if not builtin.exists():
+        self.template_path = str(builtin)
+        if not Path(builtin).exists():
             self.use_template = False
             self.template_notice = template_unavailable_message(str(builtin), "missing")
             return
