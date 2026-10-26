@@ -1,0 +1,37 @@
+档序 ArchiveDesk 0.3 离线试用说明
+================================
+
+这个包可以在不联网的 Windows 电脑上使用。压缩包和安装包里都没有标准模板。
+
+一、解压版怎么打开
+1. 用资源管理器把 zip 全部解压到一个文件夹。不要只把 ArchiveDesk.exe 拷出来。
+2. 双击同一层目录里的 Start.bat。也可以直接双击 ArchiveDesk.exe。
+3. 第一次打开如果没有模板，程序仍会启动，但「导出 Excel」不能用。
+
+二、安装版怎么打开
+1. 双击 setup.exe。安装不需要管理员权限。
+2. 默认装到本用户的 %LOCALAPPDATA%\Programs\ArchiveDesk。
+3. 安装程序会在桌面放一个「档序 ArchiveDesk」快捷方式，双击即可。
+4. 安装过程不下载任何文件。
+
+三、标准模板放哪里
+把本单位的标准模板复制成下面这个文件名，放到程序旁边的 templates 文件夹里：
+
+  templates\standard_template.xlsx
+
+解压版：templates 文件夹和 Start.bat、ArchiveDesk.exe 在同一层。
+安装版：在安装目录里，一般是
+
+  %LOCALAPPDATA%\Programs\ArchiveDesk\templates\standard_template.xlsx
+
+程序启动时优先读这个位置。放好后重新打开程序。没有这个文件时，导出保持停用。
+
+四、启动失败时
+1. 先看程序目录里有没有 startup-error.txt。
+2. 再看 %LOCALAPPDATA%\ArchiveDesk\startup-error.txt。
+3. 杀毒软件经常会拦截 PyInstaller 打出来的 exe，表现为文件消失、窗口一闪就没了，或者提示风险。请从隔离区恢复 ArchiveDesk.exe，并把整个程序文件夹加入白名单，然后重新双击 Start.bat。
+4. 若提示缺少 VCRUNTIME140.dll 或 MSVCP140.dll，说明运行库没有随包带上。请把完整的压缩包重新解压，不要混用旧文件。
+5. 窗口能开但无法导出：检查 templates\standard_template.xlsx 是否在上面的位置，文件名不要改。
+
+五、离线范围
+识别、核对、导出都在本机完成，不需要登录，也不会上传材料。
