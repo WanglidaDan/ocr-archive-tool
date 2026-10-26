@@ -129,11 +129,12 @@ def main(argv=None):
         f"unpacked_bytes={unpacked}",
         f"onnx={info['onnx']}",
         f"dlls={','.join(info['dlls'])}",
-        f"template_note={info['template_note']}",
+        "template_note=present",
         "template_xlsx=0",
     ]
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print("\n".join(lines))
+    sys.stdout.buffer.write(("\n".join(lines) + "\n").encode("utf-8", "replace"))
+    sys.stdout.buffer.flush()
     return 0
 
 
