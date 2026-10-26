@@ -1,0 +1,1423 @@
+{
+  "note": "合成基准，机关名称均为虚构的「示例…」，不含真实公文、模板或个人信息。含图片、多页 TIFF、多页 PDF 和按扫描件制作的 PDF。",
+  "font": "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+  "nominal_dpi": 180,
+  "documents": [
+    {
+      "id": "01",
+      "file": "01-clean.png",
+      "condition": "clean",
+      "pages": 1,
+      "fields": {
+        "题名": "开展档案数字化工作要点",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2018-03-01",
+        "文号": "示档发〔2018〕11号",
+        "密级": "机密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "points",
+        "date_cn": true,
+        "secret_draw": "机密★10年  特急",
+        "secret_style": "with_extra",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "02",
+      "file": "02-clean.png",
+      "condition": "clean",
+      "pages": 1,
+      "fields": {
+        "题名": "关于调整公文办理流程的通报",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2018-03-19",
+        "文号": "示政办发〔2018〕12号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "秘密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "03",
+      "file": "03-clean.png",
+      "condition": "clean",
+      "pages": 1,
+      "fields": {
+        "题名": "关于报送年度统计材料的报告",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2018-04-06",
+        "文号": "示卫健发〔2018〕13号",
+        "密级": "内部",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "内部",
+        "secret_style": "mark",
+        "printed_pages": 3,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "04",
+      "file": "04-clean.png",
+      "condition": "clean",
+      "pages": 1,
+      "fields": {
+        "题名": "关于规范文件归档范围的请示",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2018-04-21",
+        "文号": "示教体发〔2018〕14号",
+        "密级": "公开",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "公开",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "05",
+      "file": "05-clean.tif",
+      "condition": "clean",
+      "pages": 2,
+      "fields": {
+        "题名": "示例市档案局关于启用新的收文登记的批复",
+        "责任者": "示例市档案局",
+        "文件日期": "2018-05-09",
+        "文号": "示档局发〔2018〕15号",
+        "密级": "",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "",
+        "secret_style": "none",
+        "printed_pages": 2,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "06",
+      "file": "06-red_header.png",
+      "condition": "red_header",
+      "pages": 1,
+      "fields": {
+        "题名": "关于修订保密管理规定的函",
+        "责任者": "示例市人民政府",
+        "文件日期": "2018-05-27",
+        "文号": "示政发〔2018〕16号",
+        "密级": "绝密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "绝密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "07",
+      "file": "07-red_header.png",
+      "condition": "red_header",
+      "pages": 1,
+      "fields": {
+        "题名": "关于组织公文写作培训的决定",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2018-06-11",
+        "文号": "示档发〔2018〕17号",
+        "密级": "机密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "机密★10年",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "08",
+      "file": "08-red_header.png",
+      "condition": "red_header",
+      "pages": 1,
+      "fields": {
+        "题名": "关于清理逾期未归档案的意见",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2018-06-29",
+        "文号": "示政办发〔2018〕18号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "秘密★5年",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "09",
+      "file": "09-red_header.png",
+      "condition": "red_header",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市卫生健康委员会关于公布值班安排的办法",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2018-07-17",
+        "文号": "示卫健发〔2018〕19号",
+        "密级": "内部资料",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "内部资料",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "10",
+      "file": "10-red_header.tif",
+      "condition": "red_header",
+      "pages": 2,
+      "fields": {
+        "题名": "关于实施电子文件移交的规定",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2018-08-01",
+        "文号": "示教体发〔2018〕20号",
+        "密级": "机密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "two_line",
+        "date_cn": false,
+        "secret_draw": "机密",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "11",
+      "file": "11-skew.png",
+      "condition": "skew",
+      "pages": 1,
+      "fields": {
+        "题名": "关于核对案卷目录的方案",
+        "责任者": "示例市档案局",
+        "文件日期": "2018-08-19",
+        "文号": "示档局发〔2018〕21号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "秘密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 2.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "12",
+      "file": "12-skew.png",
+      "condition": "skew",
+      "pages": 1,
+      "fields": {
+        "题名": "暂停纸质简报的纪要",
+        "责任者": "示例市人民政府",
+        "文件日期": "2018-09-06",
+        "文号": "示政发〔2018〕22号",
+        "密级": "内部",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "no_about",
+        "date_cn": false,
+        "secret_draw": "内部",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": -3.5,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "13",
+      "file": "13-skew.png",
+      "condition": "skew",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市档案管理局关于开展档案数字化的总结",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2018-09-21",
+        "文号": "示档发〔2018〕23号",
+        "密级": "公开",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "公开",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 5.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "14",
+      "file": "14-skew.png",
+      "condition": "skew",
+      "pages": 1,
+      "fields": {
+        "题名": "调整公文办理流程工作要点",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2018-10-09",
+        "文号": "示政办发〔2018〕24号",
+        "密级": "",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "points",
+        "date_cn": false,
+        "secret_draw": "",
+        "secret_style": "none",
+        "printed_pages": 1,
+        "skew": -6.5,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "15",
+      "file": "15-skew.tif",
+      "condition": "skew",
+      "pages": 2,
+      "fields": {
+        "题名": "关于报送年度统计材料的通知",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2018-10-27",
+        "文号": "示卫健发〔2018〕25号",
+        "密级": "绝密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "绝密",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 8.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "16",
+      "file": "16-blur.png",
+      "condition": "blur",
+      "pages": 1,
+      "fields": {
+        "题名": "关于规范文件归档范围的通报",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2018-11-11",
+        "文号": "示教体发〔2018〕26号",
+        "密级": "机密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "机密★10年",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.9,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "17",
+      "file": "17-blur.png",
+      "condition": "blur",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市档案局关于启用新的收文登记的报告",
+        "责任者": "示例市档案局",
+        "文件日期": "2018-11-29",
+        "文号": "示档局发〔2018〕27号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "秘密★5年",
+        "secret_style": "mark",
+        "printed_pages": 3,
+        "skew": 0.0,
+        "blur": 1.3,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "18",
+      "file": "18-blur.png",
+      "condition": "blur",
+      "pages": 1,
+      "fields": {
+        "题名": "关于修订保密管理规定的请示",
+        "责任者": "示例市人民政府",
+        "文件日期": "2018-12-17",
+        "文号": "示政发〔2018〕28号",
+        "密级": "内部资料",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "内部资料★10年  特急",
+        "secret_style": "with_extra",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 1.8,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "19",
+      "file": "19-blur.png",
+      "condition": "blur",
+      "pages": 1,
+      "fields": {
+        "题名": "关于组织公文写作培训的批复",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2019-01-01",
+        "文号": "示档发〔2019〕29号",
+        "密级": "机密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "two_line",
+        "date_cn": true,
+        "secret_draw": "机密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 2.4,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "20",
+      "file": "20-lowdpi.png",
+      "condition": "lowdpi",
+      "pages": 1,
+      "fields": {
+        "题名": "关于清理逾期未归档案的函",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2019-01-19",
+        "文号": "示政办发〔2019〕30号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "秘密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": 120,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "21",
+      "file": "21-lowdpi.png",
+      "condition": "lowdpi",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市卫生健康委员会关于公布值班安排的决定",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2019-02-06",
+        "文号": "示卫健发〔2019〕31号",
+        "密级": "内部",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "内部",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": 100,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "22",
+      "file": "22-lowdpi.png",
+      "condition": "lowdpi",
+      "pages": 1,
+      "fields": {
+        "题名": "关于实施电子文件移交的意见",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2019-02-21",
+        "文号": "示教体发〔2019〕32号",
+        "密级": "公开",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "公开",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": 96,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "23",
+      "file": "23-lowdpi.png",
+      "condition": "lowdpi",
+      "pages": 1,
+      "fields": {
+        "题名": "核对案卷目录的办法",
+        "责任者": "示例市档案局",
+        "文件日期": "2019-03-11",
+        "文号": "示档局发〔2019〕33号",
+        "密级": "",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "no_about",
+        "date_cn": true,
+        "secret_draw": "",
+        "secret_style": "none",
+        "printed_pages": 3,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": 72,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "24",
+      "file": "24-red_seal.png",
+      "condition": "red_seal",
+      "pages": 1,
+      "fields": {
+        "题名": "关于暂停纸质简报的规定",
+        "责任者": "示例市人民政府",
+        "文件日期": "2019-03-29",
+        "文号": "示政发〔2019〕34号",
+        "密级": "绝密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "绝密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "25",
+      "file": "25-red_seal.png",
+      "condition": "red_seal",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市档案管理局关于开展档案数字化的方案",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2019-04-13",
+        "文号": "示档发〔2019〕35号",
+        "密级": "机密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "机密★10年",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "docno",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "26",
+      "file": "26-red_seal.png",
+      "condition": "red_seal",
+      "pages": 1,
+      "fields": {
+        "题名": "关于调整公文办理流程的纪要",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2019-05-01",
+        "文号": "示政办发〔2019〕36号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "秘密★5年",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "27",
+      "file": "27-red_seal.png",
+      "condition": "red_seal",
+      "pages": 1,
+      "fields": {
+        "题名": "报送年度统计材料工作要点",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2019-05-19",
+        "文号": "示卫健发〔2019〕37号",
+        "密级": "内部资料",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "points",
+        "date_cn": true,
+        "secret_draw": "内部资料",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "docno",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "28",
+      "file": "28-red_seal.tif",
+      "condition": "red_seal",
+      "pages": 2,
+      "fields": {
+        "题名": "关于规范文件归档范围的公告",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2019-06-03",
+        "文号": "示教体发〔2019〕38号",
+        "密级": "机密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "two_line",
+        "date_cn": false,
+        "secret_draw": "机密",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "29",
+      "file": "29-photocopy.jpg",
+      "condition": "photocopy",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市档案局关于启用新的收文登记的通知",
+        "责任者": "示例市档案局",
+        "文件日期": "2019-06-21",
+        "文号": "示档局发〔2019〕39号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "秘密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "30",
+      "file": "30-photocopy.jpg",
+      "condition": "photocopy",
+      "pages": 1,
+      "fields": {
+        "题名": "关于修订保密管理规定的通报",
+        "责任者": "示例市人民政府",
+        "文件日期": "2019-07-09",
+        "文号": "示政发〔2019〕40号",
+        "密级": "内部",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "内部",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "31",
+      "file": "31-photocopy.jpg",
+      "condition": "photocopy",
+      "pages": 1,
+      "fields": {
+        "题名": "关于组织公文写作培训的报告",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2019-07-24",
+        "文号": "示档发〔2019〕41号",
+        "密级": "公开",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "公开",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "32",
+      "file": "32-photocopy.tif",
+      "condition": "photocopy",
+      "pages": 2,
+      "fields": {
+        "题名": "关于清理逾期未归档案的请示",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2019-08-11",
+        "文号": "示政办发〔2019〕42号",
+        "密级": "",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "",
+        "secret_style": "none",
+        "printed_pages": 2,
+        "skew": 0.0,
+        "blur": 0.0,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "33",
+      "file": "33-hard.jpg",
+      "condition": "hard",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市卫生健康委员会关于公布值班安排的批复",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2019-08-29",
+        "文号": "示卫健发〔2019〕43号",
+        "密级": "绝密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "绝密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 5.0,
+        "blur": 1.2,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "34",
+      "file": "34-hard.png",
+      "condition": "hard",
+      "pages": 1,
+      "fields": {
+        "题名": "实施电子文件移交的函",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2019-09-13",
+        "文号": "示教体发〔2019〕44号",
+        "密级": "机密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "no_about",
+        "date_cn": false,
+        "secret_draw": "机密★10年",
+        "secret_style": "mark",
+        "printed_pages": 3,
+        "skew": -7.0,
+        "blur": 0.8,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "35",
+      "file": "35-hard.png",
+      "condition": "hard",
+      "pages": 1,
+      "fields": {
+        "题名": "关于核对案卷目录的决定",
+        "责任者": "示例市档案局",
+        "文件日期": "2019-10-01",
+        "文号": "示档局发〔2019〕45号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "秘密★5年  特急",
+        "secret_style": "with_extra",
+        "printed_pages": 1,
+        "skew": 3.0,
+        "blur": 0.0,
+        "dpi": 110,
+        "photocopy": false,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "36",
+      "file": "36-hard.tif",
+      "condition": "hard",
+      "pages": 2,
+      "fields": {
+        "题名": "关于暂停纸质简报的意见",
+        "责任者": "示例市人民政府",
+        "文件日期": "2019-10-19",
+        "文号": "示政发〔2019〕46号",
+        "密级": "内部资料",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "内部资料",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 8.0,
+        "blur": 1.6,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "docno",
+        "decoy_date": "2023年5月6日"
+      }
+    },
+    {
+      "id": "37",
+      "file": "37-pdf_multi.pdf",
+      "condition": "pdf_multi",
+      "pages": 2,
+      "fields": {
+        "题名": "关于开展档案数字化的办法",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2019-11-03",
+        "文号": "示档发〔2019〕47号",
+        "密级": "机密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "two_line",
+        "date_cn": true,
+        "secret_draw": "机密",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 0,
+        "blur": 0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": false
+      }
+    },
+    {
+      "id": "38",
+      "file": "38-pdf_multi.pdf",
+      "condition": "pdf_multi",
+      "pages": 2,
+      "fields": {
+        "题名": "关于调整公文办理流程的规定",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2019-11-21",
+        "文号": "示政办发〔2019〕48号",
+        "密级": "秘密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "秘密",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 0,
+        "blur": 0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": false
+      }
+    },
+    {
+      "id": "39",
+      "file": "39-pdf_multi.pdf",
+      "condition": "pdf_multi",
+      "pages": 2,
+      "fields": {
+        "题名": "关于报送年度统计材料的方案",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2019-12-09",
+        "文号": "示卫健发〔2019〕49号",
+        "密级": "内部",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "内部",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 4.0,
+        "blur": 0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": false
+      }
+    },
+    {
+      "id": "40",
+      "file": "40-pdf_multi.pdf",
+      "condition": "pdf_multi",
+      "pages": 2,
+      "fields": {
+        "题名": "规范文件归档范围工作要点",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2019-12-24",
+        "文号": "示教体发〔2019〕50号",
+        "密级": "公开",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "points",
+        "date_cn": false,
+        "secret_draw": "公开",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 0,
+        "blur": 0,
+        "dpi": null,
+        "photocopy": false,
+        "red_header": false,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": false
+      }
+    },
+    {
+      "id": "41",
+      "file": "41-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 1,
+      "fields": {
+        "题名": "示例市档案局关于启用新的收文登记的总结",
+        "责任者": "示例市档案局",
+        "文件日期": "2020-01-11",
+        "文号": "示档局发〔2020〕51号",
+        "密级": "",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about_org",
+        "date_cn": true,
+        "secret_draw": "",
+        "secret_style": "none",
+        "printed_pages": 1,
+        "skew": 3.0,
+        "blur": 0.8,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    },
+    {
+      "id": "42",
+      "file": "42-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 1,
+      "fields": {
+        "题名": "关于修订保密管理规定的公告",
+        "责任者": "示例市人民政府",
+        "文件日期": "2020-01-29",
+        "文号": "示政发〔2020〕52号",
+        "密级": "绝密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "绝密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": -2.5,
+        "blur": 1.2,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    },
+    {
+      "id": "43",
+      "file": "43-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 2,
+      "fields": {
+        "题名": "关于组织公文写作培训的通知",
+        "责任者": "示例市档案管理局",
+        "文件日期": "2020-02-13",
+        "文号": "示档发〔2020〕53号",
+        "密级": "机密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "机密★10年",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 6.0,
+        "blur": 0.6,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "docno",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    },
+    {
+      "id": "44",
+      "file": "44-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 2,
+      "fields": {
+        "题名": "关于清理逾期未归档案的通报",
+        "责任者": "示例县人民政府办公室",
+        "文件日期": "2020-03-02",
+        "文号": "示政办发〔2020〕54号",
+        "密级": "秘密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "秘密★5年",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 0,
+        "blur": 1.5,
+        "dpi": 96,
+        "photocopy": true,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    },
+    {
+      "id": "45",
+      "file": "45-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 1,
+      "fields": {
+        "题名": "公布值班安排的报告",
+        "责任者": "示例市卫生健康委员会",
+        "文件日期": "2020-03-20",
+        "文号": "示卫健发〔2020〕55号",
+        "密级": "内部资料",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "no_about",
+        "date_cn": true,
+        "secret_draw": "内部资料",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 8.0,
+        "blur": 0.4,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    },
+    {
+      "id": "46",
+      "file": "46-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 2,
+      "fields": {
+        "题名": "关于实施电子文件移交的请示",
+        "责任者": "示例区教育体育中心",
+        "文件日期": "2020-04-04",
+        "文号": "示教体发〔2020〕56号",
+        "密级": "机密",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "two_line",
+        "date_cn": false,
+        "secret_draw": "机密",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": -5.0,
+        "blur": 0.9,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": false,
+        "seal_target": "",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    },
+    {
+      "id": "47",
+      "file": "47-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 1,
+      "fields": {
+        "题名": "关于核对案卷目录的批复",
+        "责任者": "示例市档案局",
+        "文件日期": "2020-04-22",
+        "文号": "示档局发〔2020〕57号",
+        "密级": "秘密",
+        "页数": "1"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": true,
+        "secret_draw": "秘密",
+        "secret_style": "mark",
+        "printed_pages": 1,
+        "skew": 2.0,
+        "blur": 2.0,
+        "dpi": 110,
+        "photocopy": true,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "docno",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    },
+    {
+      "id": "48",
+      "file": "48-pdf_scan.pdf",
+      "condition": "pdf_scan",
+      "pages": 2,
+      "fields": {
+        "题名": "关于暂停纸质简报的函",
+        "责任者": "示例市人民政府",
+        "文件日期": "2020-05-10",
+        "文号": "示政发〔2020〕58号",
+        "密级": "内部",
+        "页数": "2"
+      },
+      "render": {
+        "title_mode": "about",
+        "date_cn": false,
+        "secret_draw": "内部",
+        "secret_style": "mark",
+        "printed_pages": 2,
+        "skew": 5.5,
+        "blur": 1.1,
+        "dpi": null,
+        "photocopy": true,
+        "red_header": true,
+        "seal": true,
+        "seal_target": "signature",
+        "decoy_date": "2023年5月6日",
+        "container": "pdf",
+        "jpeg_pages": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "linux_runtime_loaded_on_vm": {
+    "note": "本机 import 到的目录字节数（Linux）。OpenCV 是当前解释器实际加载的版本，不一定等于 requirements 里钉的 Windows wheel。",
+    "versions": {
+      "onnxruntime": "1.20.1",
+      "cv2": "4.11.0",
+      "numpy": "1.26.4",
+      "rapidocr_onnxruntime": "1.4.4"
+    },
+    "directories": {
+      "onnxruntime": 41482410,
+      "cv2": 82197747,
+      "numpy": 34374538,
+      "PIL": 6361682,
+      "rapidocr_onnxruntime": 16387324
+    },
+    "sibling_libs": {
+      "pillow.libs": 7559304,
+      "opencv_python.libs": 94422442
+    },
+    "sum_bytes": 282785447
+  },
+  "windows_portable_files": {
+    "note": "每个 wheel 用 pip download --no-deps 单独取 Windows amd64 / CPython 3.11 文件（纯 Python 包不限平台）。解压字节是 zip 内 file_size 之和。",
+    "errors": [],
+    "wheels": {
+      "numpy-1.26.4-cp311-cp311-win_amd64.whl": {
+        "zip_bytes": 15811913,
+        "uncompressed_bytes": 58273916,
+        "onnx_uncompressed_bytes": {}
+      },
+      "onnxruntime-1.20.1-cp311-cp311-win_amd64.whl": {
+        "zip_bytes": 11329895,
+        "uncompressed_bytes": 33164339,
+        "onnx_uncompressed_bytes": {
+          "logreg_iris.onnx": 670,
+          "mul_1.onnx": 130,
+          "sigmoid.onnx": 103
+        }
+      },
+      "opencv_python-4.10.0.84-cp37-abi3-win_amd64.whl": {
+        "zip_bytes": 38842521,
+        "uncompressed_bytes": 111443572,
+        "onnx_uncompressed_bytes": {}
+      },
+      "pillow-11.1.0-cp311-cp311-win_amd64.whl": {
+        "zip_bytes": 2625686,
+        "uncompressed_bytes": 6345812,
+        "onnx_uncompressed_bytes": {}
+      },
+      "pyclipper-1.4.0-cp311-cp311-win_amd64.whl": {
+        "zip_bytes": 104362,
+        "uncompressed_bytes": 230748,
+        "onnx_uncompressed_bytes": {}
+      },
+      "pyyaml-6.0.3-cp311-cp311-win_amd64.whl": {
+        "zip_bytes": 158763,
+        "uncompressed_bytes": 482877,
+        "onnx_uncompressed_bytes": {}
+      },
+      "rapidocr_onnxruntime-1.4.4-py3-none-any.whl": {
+        "zip_bytes": 14915192,
+        "uncompressed_bytes": 16275503,
+        "onnx_uncompressed_bytes": {
+          "ch_PP-OCRv4_det_infer.onnx": 4745517,
+          "ch_PP-OCRv4_rec_infer.onnx": 10857958,
+          "ch_ppocr_mobile_v2.0_cls_infer.onnx": 585532
+        }
+      },
+      "shapely-2.2.0-cp311-cp311-win_amd64.whl": {
+        "zip_bytes": 1795293,
+        "uncompressed_bytes": 5316670,
+        "onnx_uncompressed_bytes": {}
+      }
+    },
+    "python_embed_amd64": {
+      "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
+      "file": "python-3.11.9-embed-amd64.zip",
+      "zip_bytes": 11249023,
+      "uncompressed_bytes": 21665567,
+      "onnx_uncompressed_bytes": {}
+    }
+  },
+  "bundles": {
+    "note": "相加的每一项都是本机 stat 或 zip 解压后 file_size，不是估算。cls 模型留在 rapidocr 包内，三种方案共用。v5 字典已嵌在 ONNX 里，ppocrv5_dict.txt 不计入捆绑体积。",
+    "v5_model_bytes": {
+      "mobile_det": 4819576,
+      "mobile_rec": 16631306,
+      "server_det": 88118768,
+      "server_rec": 84577022,
+      "dict_not_used": 74012
+    },
+    "installed_v4_bytes": {
+      "det": 4745517,
+      "rec": 10857958,
+      "cls": 585532
+    },
+    "v4_onnx_inside_win_wheel": {
+      "logreg_iris.onnx": 670,
+      "mul_1.onnx": 130,
+      "sigmoid.onnx": 103,
+      "ch_PP-OCRv4_det_infer.onnx": 4745517,
+      "ch_PP-OCRv4_rec_infer.onnx": 10857958,
+      "ch_ppocr_mobile_v2.0_cls_infer.onnx": 585532
+    },
+    "counted_wheels": [
+      "numpy-1.26.4-cp311-cp311-win_amd64.whl",
+      "onnxruntime-1.20.1-cp311-cp311-win_amd64.whl",
+      "opencv_python-4.10.0.84-cp37-abi3-win_amd64.whl",
+      "pillow-11.1.0-cp311-cp311-win_amd64.whl",
+      "pyclipper-1.4.0-cp311-cp311-win_amd64.whl",
+      "pyyaml-6.0.3-cp311-cp311-win_amd64.whl",
+      "rapidocr_onnxruntime-1.4.4-py3-none-any.whl",
+      "shapely-2.2.0-cp311-cp311-win_amd64.whl"
+    ],
+    "python_embed_uncompressed_bytes": 21665567,
+    "win_wheels_uncompressed_bytes": 231533437,
+    "bundles": {
+      "v4_current": {
+        "deps_plus_models_bytes": 231533437,
+        "with_python_embed_bytes": 253199004,
+        "dropped_v4_det_rec_bytes": 0,
+        "added_model_bytes": 0
+      },
+      "v5_mobile_replacing_v4_det_rec": {
+        "deps_plus_models_bytes": 237380844,
+        "with_python_embed_bytes": 259046411,
+        "dropped_v4_det_rec_bytes": 15603475,
+        "added_model_bytes": 21450882
+      },
+      "v5_server_replacing_v4_det_rec": {
+        "deps_plus_models_bytes": 388625752,
+        "with_python_embed_bytes": 410291319,
+        "dropped_v4_det_rec_bytes": 15603475,
+        "added_model_bytes": 172695790
+      },
+      "v4_plus_optional_v5_mobile": {
+        "deps_plus_models_bytes": 252984319,
+        "with_python_embed_bytes": 274649886,
+        "dropped_v4_det_rec_bytes": 0,
+        "added_model_bytes": 21450882
+      },
+      "v4_plus_optional_v5_server": {
+        "deps_plus_models_bytes": 404229227,
+        "with_python_embed_bytes": 425894794,
+        "dropped_v4_det_rec_bytes": 0,
+        "added_model_bytes": 172695790
+      },
+      "v4_plus_both_v5": {
+        "deps_plus_models_bytes": 425680109,
+        "with_python_embed_bytes": 447345676,
+        "dropped_v4_det_rec_bytes": 0,
+        "added_model_bytes": 194146672
+      }
+    }
+  }
+}

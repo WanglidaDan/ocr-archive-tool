@@ -8,6 +8,17 @@ DEFAULT_FIELDS = ['文件名称', '文号', '日期', '责任单位', '页数', 
 from extraction import extract, extract_details, reading_rows
 SUPPORTED = {'.pdf','.png','.jpg','.jpeg','.bmp','.tif','.tiff'}
 
+def assemble_fields(text, fields, pages, rows, enhanced_rules=False, additional=None):
+    """Product extraction. enhanced_rules overwrites the 公文 fields after it.
+
+    With enhanced_rules false this is extract_details, including its warnings.
+    """
+    values, evidence, warnings = extract_details(text, fields, pages, rows=rows, additional=additional)
+    if enhanced_rules:
+        from enhanced_rules import apply_enhanced
+        values, evidence, warnings = apply_enhanced(values, evidence, warnings, text, fields, pages, rows)
+    return values, evidence, warnings
+
 def local_llm(text, fields, model):
     if len(text) > 24000:
         raise ValueError('原文超过本地模型输入上限，已保留规则结果；请分卷处理或手工核对。')
@@ -31,7 +42,7 @@ class Processor:
     def __init__(self):
         self.engine = None
 
-    def recognize(self, path, fields, cancelled=lambda:False, progress=lambda message:None, model=''):
+    def recognize(self, path, fields, cancelled=lambda:False, progress=lambda message:None, model='', enhanced_rules=False):
         import fitz
         import numpy as np
         from PIL import Image, ImageOps
@@ -76,6 +87,9 @@ class Processor:
                 values,evidence,extra=extract_details(text,fields,len(texts),rows=rows,additional=candidates)
                 warnings.extend(extra)
             except Exception as e: warnings.append(f'本地模型提取失败，已保留OCR与规则结果：{e}')
+        if enhanced_rules:
+            from enhanced_rules import apply_enhanced
+            values,evidence,warnings=apply_enhanced(values,evidence,warnings,text,fields,len(texts),rows)
         return {'text':text,'values':values,'pages':len(texts),'confidence':round(min(scores),3),
                 'evidence':evidence,'ocr_rows':rows,'engine_version':'0.3',
                 'warning':'；'.join(dict.fromkeys(warnings)),'status':'待核对'}
