@@ -28,7 +28,7 @@ Windows 开源源码版。
 
 原 0.3 版本曾完成 Linux 环境单元测试、模拟扫描及模板格式验证。本次发布不表示已通过真实 Windows 设备验收；OCR 结果仍需核对，档案系统实际导入应另行测试。
 
-测试不依赖未公开的业务模板或真实扫描件。示例模板由测试用 openpyxl 生成（含责任单位等下拉字段），扫描图由 Pillow 按本机中文字体绘制。Windows 上可运行全部测试：
+测试不依赖未公开的业务模板或真实扫描件。示例模板由测试代码按「管理类_件 / 卷 / 卷内件」结构生成，下拉单位使用「示例单位A」这类占位名；扫描图由 Pillow 按本机中文字体绘制。Windows 上可运行全部测试：
 
 ```bat
 set QT_QPA_PLATFORM=offscreen
@@ -36,6 +36,8 @@ set QT_QPA_PLATFORM=offscreen
 ```
 
 Linux 需要中文字体（例如 `fonts-wqy-microhei`）以及 Qt offscreen 平台库。GitHub Actions 在 Python 3.11 上执行同一套测试。
+
+`templates/standard_template.xlsx` 是本机私有模板，已写入 `.gitignore`，不要提交。程序在该文件存在时默认用它，缺失或损坏时改为自定义核对模式。打包前运行 `Build.cmd`，缺少该文件会直接停止。公开测试使用代码生成的假模板。汇总导出把多份扫描写入同一工作簿的「管理类_件」；`python tools/compare_template.py <模板> <导出文件>` 检查除数据单元格外是否与模板一致。固定默认值在 `catalog_defaults.py`，目前全部留空。
 
 ## 许可证
 

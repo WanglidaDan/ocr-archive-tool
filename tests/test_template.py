@@ -49,7 +49,7 @@ class TemplateTests(unittest.TestCase):
             for values in [
                 {"密级": "未定义密级"},
                 {"文件日期": "2026年13月1日"},
-                {"文件日期": "2099-01-01"},
+                {"年度": "1899"},
                 {"页数": "4.5"},
             ]:
                 with self.assertRaises(ValueError):

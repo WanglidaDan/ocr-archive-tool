@@ -8,46 +8,98 @@ contains real archive material.
 import tempfile
 from pathlib import Path
 
-# Column letters are part of the export tests: D 题名, F 文件日期, K 密级,
-# S 页数, T 正本数量. 保管期限 must offer 永久. 责任单位 is a dropdown the
-# linkage and UI code look up by header name.
-CATALOG_HEADERS = [
-    "序号",
-    "档号",
-    "文件编号",
+# Public stand-in for the private templates/standard_template.xlsx.
+# Dropdown units are fake. Column letters used by older export tests:
+# D 题名, F 文件日期, K 密级, S 页数, T 正本数量.
+PIECE_HEADERS = [
+    "电子文件关联项",
+    "归档单位(系统生成)",
+    "临时序号",
     "题名",
     "责任者",
     "文件日期",
-    "年度",
-    "保管期限",
-    "分类号",
-    "机构或问题",
-    "密级",
     "归档单位",
-    "责任单位",
+    "保管期限",
     "载体类型",
-    "稿本",
-    "附件说明",
-    "备注",
-    "盒号",
+    "互见号",
+    "密级",
+    "保密期限",
+    "提要",
+    "主题词",
+    "履行阶段",
+    "报审序号",
+    "历史档号",
+    "框架代码",
     "页数",
     "正本数量",
-    "副本数量",
-    "电子文件数量",
+    "数量",
+    "年度",
+    "文件编号",
+    "备注",
     "电子文件大小",
-    "存放位置",
-    "参见号",
-    "互见号",
-    "著录人",
-    "著录日期",
-    "检查人",
-    "全宗号",
+    "电子文件数量",
+    "专题标签",
+    "来源",
+    "模版类型",
+    "职能标签",
 ]
-
-# 2000-01-01 and 2050-12-31 in the Windows workbook epoch. 2026-10-26 is inside
-# this range; 2099-01-01 is not.
-DATE_MIN = "36526"
-DATE_MAX = "55153"
+VOLUME_HEADERS = [
+    "电子文件关联项",
+    "序号",
+    "归档单位(系统生成)",
+    "临时序号",
+    "题名",
+    "归档单位",
+    "保管期限",
+    "载体类型",
+    "密级",
+    "保密期限",
+    "起日期",
+    "提要",
+    "止日期",
+    "件数",
+    "立卷单位",
+    "履行阶段",
+    "报审序号",
+    "历史档号",
+    "框架代码",
+    "页数",
+    "正本数量",
+    "数量",
+    "年度",
+    "备注",
+    "电子文件大小",
+    "电子文件数量",
+    "专题标签",
+    "来源",
+]
+INNER_HEADERS = [
+    "电子文件关联项",
+    "卷序号",
+    "归档单位(系统生成)",
+    "临时序号",
+    "题名",
+    "责任者",
+    "文件日期",
+    "保管期限",
+    "载体类型",
+    "密级",
+    "保密期限",
+    "履行阶段",
+    "报审序号",
+    "历史档号",
+    "框架代码",
+    "数量",
+    "年度",
+    "文件编号",
+    "页号",
+    "备注",
+    "电子文件大小",
+    "电子文件数量",
+    "来源",
+    "职能标签",
+]
+CATALOG_HEADERS = PIECE_HEADERS
 
 CJK_FONTS = [
     Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
@@ -94,51 +146,134 @@ def _style_blank_row(ws, width):
         cell.font = Font(name="Calibri", size=11)
 
 
-def _add_list(ws, cell_range, options):
-    from openpyxl.worksheet.datavalidation import DataValidation
-
-    dv = DataValidation(
-        type="list", formula1='"' + ",".join(options) + '"', allow_blank=True
-    )
-    dv.add(cell_range)
-    ws.add_data_validation(dv)
+def fake_units():
+    """Sixty placeholder units. These are not real organization names."""
+    names = ["示例单位A", "示例单位B"]
+    names.extend(f"示例单位{index:02d}" for index in range(3, 61))
+    return names
 
 
 def _write_template(path):
     from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+    from openpyxl.workbook.defined_name import DefinedName
     from openpyxl.worksheet.datavalidation import DataValidation
 
-    if len(CATALOG_HEADERS) != 30 or len(set(CATALOG_HEADERS)) != 30:
-        raise RuntimeError("示例模板表头必须是 30 个互不相同的字段")
+    if (
+        len(PIECE_HEADERS) != 30
+        or len(VOLUME_HEADERS) != 28
+        or len(INNER_HEADERS) != 24
+    ):
+        raise RuntimeError("示例模板表头数量与标准结构不一致")
+    units = fake_units()
+    lists = {
+        "归档单位(系统生成)": ("OUID", "归档单位(系统生成)", units),
+        "归档单位": ("FilingUnit", "归档单位", units),
+        "保管期限": ("RetentionPeriod", "保管期限", ["永久", "30年", "10年"]),
+        "载体类型": (
+            "Media",
+            "载体类型",
+            [
+                "纸质",
+                "照片",
+                "磁盘",
+                "磁带",
+                "光盘",
+                "底图",
+                "岩心",
+                "岩屑",
+                "其他",
+                "电子",
+                "胶片",
+            ],
+        ),
+        "密级": (
+            "SecurityClassification",
+            "密级",
+            [
+                "无密级",
+                "油商密★",
+                "油商密★★",
+                "普通商密",
+                "内部资料",
+                "石油内部",
+                "石油商密",
+                "非涉密",
+            ],
+        ),
+        "保密期限": ("SecrecyTerm", "保密期限", ["示例期限A", "示例期限B"]),
+        "专题标签": ("Property60", "专题标签", ["示例标签A", "示例标签B"]),
+        "模版类型": ("Property49", "模版类型", ["收文", "发文"]),
+    }
+    decimals = {
+        "临时序号",
+        "页数",
+        "正本数量",
+        "数量",
+        "电子文件大小",
+        "电子文件数量",
+        "件数",
+    }
+    dates = {"文件日期", "起日期", "止日期"}
     wb = Workbook()
-    ws = wb.active
-    ws.title = "管理类_件"
-    for col, header in enumerate(CATALOG_HEADERS, 1):
-        ws.cell(1, col, header)
-    _style_blank_row(ws, len(CATALOG_HEADERS))
-    _add_list(ws, "H2:H500", ["永久", "30年", "10年"])
-    _add_list(
-        ws,
-        "K2:K500",
-        ["非涉密", "无密级", "内部", "内部资料", "普通商密", "秘密", "机密", "绝密"],
-    )
-    _add_list(ws, "L2:L500", ["公司-机关-档案馆", "公司-办公室"])
-    _add_list(ws, "M2:M500", ["档案馆", "办公室"])
-    dates = DataValidation(
-        type="date",
-        operator="between",
-        formula1=DATE_MIN,
-        formula2=DATE_MAX,
-        allow_blank=True,
-    )
-    dates.add("F2:F500")
-    ws.add_data_validation(dates)
+
+    def add_catalog(ws, headers):
+        header_font = Font(name="Calibri", bold=True, size=11)
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(1, col, header)
+            cell.font = header_font
+            letter = get_column_letter(col)
+            ws.column_dimensions[letter].width = 18
+            lock = DataValidation(
+                type="list", formula1='"' + header + '"', allow_blank=True
+            )
+            lock.add(f"{letter}1")
+            ws.add_data_validation(lock)
+            span = f"{letter}2:{letter}100001"
+            if header in lists:
+                dv = DataValidation(
+                    type="list", formula1="=" + lists[header][0], allow_blank=True
+                )
+            elif header in decimals:
+                dv = DataValidation(type="decimal", allow_blank=True)
+            elif header in dates:
+                dv = DataValidation(type="date", allow_blank=True)
+            elif header == "年度":
+                dv = DataValidation(
+                    type="whole",
+                    operator="greaterThanOrEqual",
+                    formula1="1900",
+                    allow_blank=True,
+                )
+            else:
+                continue
+            dv.add(span)
+            ws.add_data_validation(dv)
+        _style_blank_row(ws, len(headers))
+
+    piece = wb.active
+    piece.title = "管理类_件"
+    add_catalog(piece, PIECE_HEADERS)
     volume = wb.create_sheet("管理类_卷")
-    for col in range(1, 29):
-        volume.cell(1, col, f"卷字段{col:02d}")
+    add_catalog(volume, VOLUME_HEADERS)
     inner = wb.create_sheet("管理类_卷内件")
-    for col in range(1, 25):
-        inner.cell(1, col, f"卷内字段{col:02d}")
+    add_catalog(inner, INNER_HEADERS)
+    for defined_name, sheet_name, values in lists.values():
+        sheet = wb.create_sheet(sheet_name)
+        for index, value in enumerate(values, 1):
+            sheet.cell(index, 1, value)
+        end = len(values) if defined_name not in ("OUID", "FilingUnit") else 60
+        wb.defined_names.add(
+            DefinedName(name=defined_name, attr_text=f"'{sheet_name}'!$A$1:$A${end}")
+        )
+    for title, samples in (
+        ("全宗号", ["示例全宗A", "示例全宗B"]),
+        ("类别号", ["示例类别A", "示例类别B"]),
+    ):
+        sheet = wb.create_sheet(title)
+        for index, value in enumerate(samples, 1):
+            sheet.cell(index, 1, value)
     wb.save(path)
 
 

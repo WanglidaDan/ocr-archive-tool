@@ -142,7 +142,8 @@ class UITests(unittest.TestCase):
             self.assertTrue(window.use_template)
             self.assertIsNone(window.template_notice)
             self.assertIn("永久", window.choices["保管期限"])
-            self.assertIn("档案馆", window.choices["责任单位"])
+            self.assertIn("示例单位A", window.choices["归档单位"])
+            self.assertIn("示例单位A", window.choices["归档单位(系统生成)"])
             window.close()
 
     def test_custom_mode_ignores_missing_template(self):

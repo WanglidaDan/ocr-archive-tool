@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QCheckBox,
 )
-from batch_export import export_separate
+from batch_export import export_mapped_separate, write_summary
 from unit_link import link_record
 from extraction import canonical, normalize_date, extract_details
 from template_io import inspect_template, export_template, standard_value
@@ -157,9 +157,9 @@ class ExportWorker(QThread):
             if self.isInterruptionRequested():
                 break
             self.message.emit("正在分开导出 · " + Path(record["path"]).name)
-            result = export_separate([record], self.folder, self.template, self.sheet)[
-                0
-            ]
+            result = export_mapped_separate(
+                [record], self.folder, self.template, self.sheet
+            )[0]
             self.results.append(result)
             self.item.emit(index, result)
 
@@ -281,6 +281,7 @@ class Window(QMainWindow):
         self.delete_btn = button("移除", self.remove)
         actions.addWidget(self.delete_btn)
         actions.addWidget(button("分开导出 Excel", self.export))
+        actions.addWidget(button("汇总导出 Excel", self.export_summary))
         actions.addWidget(button("核对记录", lambda: self.export(True)))
         content.addLayout(actions)
         self.table = QTableWidget(0, 4)
@@ -814,11 +815,15 @@ class Window(QMainWindow):
                 return
             import copy
 
-            jobs = [
-                (i, copy.deepcopy(r))
-                for i, r in enumerate(self.records)
-                if r.get("text") and r["status"] not in ("处理失败", "待识别")
-            ]
+            jobs = []
+            for index, record in enumerate(self.records):
+                if record.get("text") and record["status"] not in (
+                    "处理失败",
+                    "待识别",
+                ):
+                    item = copy.deepcopy(record)
+                    item["export_order"] = index + 1
+                    jobs.append((index, item))
             self.export_worker = ExportWorker(
                 jobs, folder, self.template_path, self.template_sheet
             )
@@ -871,6 +876,52 @@ class Window(QMainWindow):
             "批量导出结果",
             f"成功 {done} 份，失败 {len(failed)} 份。每份文件独立使用原模板。\n"
             + details,
+        )
+
+    def export_summary(self):
+        import copy
+
+        if self.busy():
+            QMessageBox.information(self, "任务进行中", "请等待当前识别或导出完成。")
+            return
+        records = []
+        for index, record in enumerate(self.records):
+            if record.get("text") and record["status"] not in ("处理失败", "待识别"):
+                item = copy.deepcopy(record)
+                item["export_order"] = index + 1
+                records.append(item)
+        if not records:
+            QMessageBox.information(
+                self, "暂无可导出结果", "请先完成至少一份文件的识别。"
+            )
+            return
+        if not self.use_template:
+            QMessageBox.warning(
+                self,
+                "需要原模板",
+                "请在设置中选择原标准模板；标准导出不使用自定义工作簿。",
+            )
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存汇总目录：全部文件写入管理类_件",
+            "目录汇总.xlsx",
+            "Excel (*.xlsx)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+        try:
+            write_summary(path, records, self.template_path, self.template_sheet)
+        except Exception as error:
+            QMessageBox.warning(self, "汇总导出失败", str(error))
+            return
+        QMessageBox.information(
+            self,
+            "汇总导出完成",
+            f"已把 {len(records)} 份文件写入「管理类_件」第2行起。\n卷和卷内件保持为空。\n"
+            + path,
         )
 
     def settings(self):

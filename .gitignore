@@ -4,6 +4,8 @@ wheels/
 __pycache__/
 *.pyc
 *.xlsx
+# 本机私有标准模板，禁止提交
+templates/standard_template.xlsx
 *.pdf
 project.json
 *.log

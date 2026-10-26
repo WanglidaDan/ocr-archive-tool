@@ -98,30 +98,12 @@ def inspect_template(path, sheet=None):
     return result
 
 
-def export_template(path, records, template_path, sheet):
-    """Patch data cells only; copy every other OOXML member byte-for-byte."""
-    import re, zipfile, posixpath, xml.etree.ElementTree as ET
-    from xml.sax.saxutils import escape
-    from openpyxl import load_workbook
-    from openpyxl.utils import get_column_letter, column_index_from_string
+def _patches_for_row(meta, book, ws, fields, row):
+    """Turn one record into cell patches. Dates stay ISO text to keep styles.xml."""
+    import re
+    from openpyxl.utils import get_column_letter
     from openpyxl.utils.datetime import to_excel
 
-    if len(records) != 1:
-        raise ValueError("原模板模式每个Excel仅对应一份文件，请使用批量分开导出")
-    if Path(path).resolve() == Path(template_path).resolve():
-        raise ValueError("不能覆盖原模板")
-    meta = inspect_template(template_path, sheet)
-    book = load_workbook(template_path)
-    ws = book[meta["sheet"]]
-    row = 2
-    while row <= ws.max_row and any(
-        ws.cell(row, c).value is not None for c in range(1, len(meta["headers"]) + 1)
-    ):
-        row += 1
-    if row > ws.max_row:
-        book.close()
-        raise ValueError("模板无可用空白数据行，未添加或修改行格式")
-    fields = records[0].get("values", {})
     patches = {}
     for col, field in enumerate(meta["headers"], 1):
         value = fields.get(field, "")
@@ -142,8 +124,6 @@ def export_template(path, records, template_path, sheet):
                 if dv.type == "date" and address in dv.sqref:
                     if _outside_bounds(serial, dv.formula1, dv.formula2):
                         raise ValueError(field + "超出原模板日期范围")
-            # The uploaded template has General date cells. ISO text preserves
-            # their original style instead of adding a date format to styles.xml.
             patches[address] = ("inlineStr", value)
         elif field in NUMERIC:
             try:
@@ -166,19 +146,73 @@ def export_template(path, records, template_path, sheet):
             )
         else:
             patches[address] = ("inlineStr", value)
-    book.close()
+        kind_value = patches[address][1]
+        if len(kind_value) > 32767 or re.search(
+            r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]", kind_value
+        ):
+            raise ValueError("字段含非法字符或超过Excel单元格长度")
+    return patches
+
+
+def _apply_row_patches(rowxml, patches):
+    import re
+    from xml.sax.saxutils import escape
+    from openpyxl.utils import column_index_from_string
+
+    for address, (kind, value) in patches.items():
+        body = (
+            ('<is><t xml:space="preserve">' + escape(value) + "</t></is>")
+            if kind == "inlineStr"
+            else "<v>" + value + "</v>"
+        )
+        cellpattern = re.compile(
+            r'<c\b(?P<attrs>[^>]*\br="'
+            + address
+            + r'"[^>]*?)(?:\s*/>|>(?P<body>.*?)</c>)',
+            re.S,
+        )
+        found = cellpattern.search(rowxml)
+        if found:
+            attrs = re.sub(r'\s+t="[^"]*"', "", found["attrs"]).rstrip()
+            cell = "<c" + attrs + ' t="' + kind + '">' + body + "</c>"
+            rowxml = rowxml[: found.start()] + cell + rowxml[found.end() :]
+        else:
+            cell = '<c r="' + address + '" t="' + kind + '">' + body + "</c>"
+            colnum = column_index_from_string(re.match(r"[A-Z]+", address)[0])
+            later = next(
+                (
+                    item
+                    for item in re.finditer(r'<c\b[^>]*\br="([A-Z]+)\d+"', rowxml)
+                    if column_index_from_string(item[1]) > colnum
+                ),
+                None,
+            )
+            offset = later.start() if later else rowxml.rfind("</row>")
+            rowxml = rowxml[:offset] + cell + rowxml[offset:]
+    return rowxml
+
+
+def _write_patches(template_path, sheet_name, patches_by_row, output_path):
+    """Copy the template and replace only the listed data cells."""
+    import re
+    import posixpath
+    import zipfile
+    import xml.etree.ElementTree as ET
+
     ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     ridns = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
     with zipfile.ZipFile(template_path) as source:
         workbook = ET.fromstring(source.read("xl/workbook.xml"))
         node = next(
-            n
-            for n in workbook.find("s:sheets", ns)
-            if n.attrib["name"] == meta["sheet"]
+            item
+            for item in workbook.find("s:sheets", ns)
+            if item.attrib["name"] == sheet_name
         )
         rels = ET.fromstring(source.read("xl/_rels/workbook.xml.rels"))
         target = next(
-            n.attrib["Target"] for n in rels if n.attrib["Id"] == node.attrib[ridns]
+            item.attrib["Target"]
+            for item in rels
+            if item.attrib["Id"] == node.attrib[ridns]
         )
         member = (
             target.lstrip("/")
@@ -186,49 +220,42 @@ def export_template(path, records, template_path, sheet):
             else posixpath.normpath("xl/" + target)
         )
         xml = source.read(member).decode("utf-8")
-        rowpattern = re.compile(
-            r'<row\b[^>]*\br="' + str(row) + r'"[^>]*>.*?</row>', re.S
-        )
-        rowmatch = rowpattern.search(xml)
-        if not rowmatch:
-            raise ValueError("模板数据行结构不受支持；未重新构建工作表")
-        rowxml = rowmatch[0]
-        for address, (kind, value) in patches.items():
-            if len(value) > 32767 or re.search(
-                r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]", value
-            ):
-                raise ValueError("字段含非法字符或超过Excel单元格长度")
-            body = (
-                ('<is><t xml:space="preserve">' + escape(value) + "</t></is>")
-                if kind == "inlineStr"
-                else "<v>" + value + "</v>"
-            )
-            cellpattern = re.compile(
-                r'<c\b(?P<attrs>[^>]*\br="'
-                + address
-                + r'"[^>]*?)(?:\s*/>|>(?P<body>.*?)</c>)',
+        for row in sorted(patches_by_row):
+            patches = patches_by_row[row]
+            if not patches:
+                continue
+            rowpattern = re.compile(
+                r'<row\b[^>]*\br="' + str(row) + r'"(?!\d)[^>]*(?:/>|>.*?</row>)',
                 re.S,
             )
-            found = cellpattern.search(rowxml)
-            if found:
-                attrs = re.sub(r'\s+t="[^"]*"', "", found["attrs"]).rstrip()
-                cell = "<c" + attrs + ' t="' + kind + '">' + body + "</c>"
-                rowxml = rowxml[: found.start()] + cell + rowxml[found.end() :]
-            else:
-                cell = '<c r="' + address + '" t="' + kind + '">' + body + "</c>"
-                colnum = column_index_from_string(re.match(r"[A-Z]+", address)[0])
+            rowmatch = rowpattern.search(xml)
+            if rowmatch and rowmatch.group(0).endswith("/>"):
+                expanded = rowmatch.group(0)[:-2].rstrip() + "></row>"
+                xml = xml[: rowmatch.start()] + expanded + xml[rowmatch.end() :]
+                rowmatch = rowpattern.search(xml)
+            if not rowmatch:
+                inserted = '<row r="' + str(row) + '"></row>'
                 later = next(
                     (
-                        m
-                        for m in re.finditer(r'<c\b[^>]*\br="([A-Z]+)\d+"', rowxml)
-                        if column_index_from_string(m[1]) > colnum
+                        item
+                        for item in re.finditer(r'<row\b[^>]*\br="(\d+)"', xml)
+                        if int(item.group(1)) > row
                     ),
                     None,
                 )
-                offset = later.start() if later else rowxml.rfind("</row>")
-                rowxml = rowxml[:offset] + cell + rowxml[offset:]
-        xml = xml[: rowmatch.start()] + rowxml + xml[rowmatch.end() :]
-        with zipfile.ZipFile(path, "w") as output:
+                if later is not None:
+                    xml = xml[: later.start()] + inserted + xml[later.start() :]
+                else:
+                    end = xml.rfind("</sheetData>")
+                    if end < 0:
+                        raise ValueError("模板数据行结构不受支持；未重新构建工作表")
+                    xml = xml[:end] + inserted + xml[end:]
+                rowmatch = rowpattern.search(xml)
+                if not rowmatch:
+                    raise ValueError("模板数据行结构不受支持；未重新构建工作表")
+            rowxml = _apply_row_patches(rowmatch[0], patches)
+            xml = xml[: rowmatch.start()] + rowxml + xml[rowmatch.end() :]
+        with zipfile.ZipFile(output_path, "w") as output:
             for info in source.infolist():
                 output.writestr(
                     info,
@@ -236,3 +263,50 @@ def export_template(path, records, template_path, sheet):
                     if info.filename == member
                     else source.read(info.filename),
                 )
+
+
+def _load_sheet(template_path, sheet):
+    from openpyxl import load_workbook
+
+    if not Path(template_path).is_file():
+        raise ValueError("找不到模板：" + str(template_path))
+    meta = inspect_template(template_path, sheet)
+    book = load_workbook(template_path)
+    return meta, book, book[meta["sheet"]]
+
+
+def export_template(path, records, template_path, sheet):
+    """Patch one data row. Copy every other OOXML member byte-for-byte."""
+    if len(records) != 1:
+        raise ValueError("原模板模式每个Excel仅对应一份文件，请使用批量分开导出")
+    if Path(path).resolve() == Path(template_path).resolve():
+        raise ValueError("不能覆盖原模板")
+    meta, book, ws = _load_sheet(template_path, sheet)
+    row = 2
+    while row <= ws.max_row and any(
+        ws.cell(row, column).value is not None
+        for column in range(1, len(meta["headers"]) + 1)
+    ):
+        row += 1
+    patches = _patches_for_row(meta, book, ws, records[0].get("values", {}), row)
+    book.close()
+    _write_patches(template_path, meta["sheet"], {row: patches}, path)
+
+
+def export_rows(path, records, template_path, sheet, start_row=2):
+    """Write records into consecutive rows of one template copy, starting at row 2."""
+    if not records:
+        raise ValueError("没有可写入的记录")
+    if Path(path).resolve() == Path(template_path).resolve():
+        raise ValueError("不能覆盖原模板")
+    meta, book, ws = _load_sheet(template_path, sheet)
+    patches_by_row = {}
+    try:
+        for offset, record in enumerate(records):
+            row = start_row + offset
+            patches_by_row[row] = _patches_for_row(
+                meta, book, ws, record.get("values", {}), row
+            )
+    finally:
+        book.close()
+    _write_patches(template_path, meta["sheet"], patches_by_row, path)
