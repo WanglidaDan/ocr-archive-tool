@@ -4,7 +4,7 @@ import os, re, tempfile
 from pathlib import Path
 from errors import chinese_message
 from status_model import not_exportable, recognition_block_reason
-from template_io import export_template
+from template_io import attach_template_path, export_template
 
 
 def excel_stem(path):
@@ -68,6 +68,16 @@ def choose_excel_name(stem, folder, overwrite, taken):
             continue
         return name
     raise ValueError("无法生成不重复的 Excel 文件名")
+
+
+def explain_export_error(message, template):
+    """Missing-template and missing-sheet errors name the path on the next line."""
+    text = message or ""
+    if "模板路径：" in text:
+        return text
+    if "找不到模板" in text or "工作表" in text:
+        return attach_template_path(text, template)
+    return text
 
 
 def _failed_item(record, message):
@@ -154,7 +164,7 @@ def export_separate(
                 in_batch=_suffix_from_batch(stem, reserved.name, prior_taken),
             )
         except Exception as error:
-            item["error"] = chinese_message(error)
+            item["error"] = explain_export_error(chinese_message(error), template)
             if (
                 placeholder
                 and reserved is not None
@@ -396,7 +406,7 @@ def _with_mapping(records, template, sheet, defaults=None, size_unit="MB"):
                 size_unit,
             )
         except Exception as error:
-            item["_map_error"] = chinese_message(error)
+            item["_map_error"] = explain_export_error(chinese_message(error), template)
         prepared.append(item)
     return prepared
 

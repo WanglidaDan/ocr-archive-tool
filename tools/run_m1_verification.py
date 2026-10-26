@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from openpyxl import load_workbook
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton
 
 from app import Window
 from batch_export import MANIFEST_COLUMNS
@@ -117,17 +117,32 @@ class _Dialogs:
 
     def _tick(self):
         box = QApplication.activeModalWidget()
-        if not isinstance(box, QMessageBox) or getattr(box, "_handled", False):
+        if box is None or getattr(box, "_handled", False):
+            return
+        if not isinstance(box, QMessageBox) and box.__class__.__name__ not in {
+            "ExportConfirmDialog",
+            "ExportResultDialog",
+            "ImportSummaryDialog",
+        }:
             return
         box._handled = True
         title = box.windowTitle()
-        if title == "尚有未核对文件":
-            self.unreviewed = box.text()
-            self._click(box, "继续导出")
-        elif title == "批量导出结果":
-            labels = [button.text() for button in box.findChildren(QPushButton)]
+        labels = [button.text() for button in box.findChildren(QPushButton)]
+        blob = "\n".join(
+            part
+            for part in (
+                box.text() if hasattr(box, "text") else "",
+                box.informativeText() if hasattr(box, "informativeText") else "",
+                "\n".join(widget.text() for widget in box.findChildren(QLabel)),
+            )
+            if part
+        )
+        if title in ("尚有未核对文件", "导出前确认"):
+            self.unreviewed = blob
+            self._click(box, "继续")
+        elif title in ("批量导出结果", "导出结果"):
             self.buttons.append(labels)
-            self.summaries.append(box.text())
+            self.summaries.append(blob)
             self._click(box, "关闭")
         else:
             self._click(box, "关闭")
@@ -473,7 +488,7 @@ def _assemble(
     if review_count and unreviewed != review_count:
         problems.append("未核对对话框份数不一致")
     retry_labels = dialogs.buttons[0] if dialogs.buttons else []
-    retry_button = int("只重试失败项" in retry_labels)
+    retry_button = int(any("只重试失败项" in label for label in retry_labels))
     if failure_rows and not retry_button:
         problems.append("结束对话框没有只重试失败项")
     failed_indexes = [

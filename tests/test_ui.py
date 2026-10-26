@@ -265,7 +265,7 @@ class UITests(unittest.TestCase):
                 window.template_banner.text(), tmp / "gone.xlsx"
             )
             self.assertEqual(window.template_banner.objectName(), "banner")
-            self.assertIn("QLabel#banner {background:#c0392b", STYLE)
+            self.assertIn("QLabel#banner {background:#FDECEA", STYLE)
             self.assertNotIn("#f4e4c4", STYLE)
             self.assertNotIn("自定义", window.template_notice)
             self.assertNotIn("自定义", window.status.text())
@@ -414,7 +414,7 @@ class UITests(unittest.TestCase):
     def _click_dialog(self, text, checks=None):
         def click():
             box = QApplication.activeModalWidget()
-            self.assertIsInstance(box, QMessageBox)
+            self.assertIsNotNone(box)
             if checks:
                 checks(box)
             for button in box.findChildren(QPushButton):
@@ -557,10 +557,12 @@ class UITests(unittest.TestCase):
             ]
 
             def checks(box):
-                self.assertEqual(box.windowTitle(), "尚有未核对文件")
+                self.assertEqual(box.windowTitle(), "导出前确认")
+                self.assertIn("还有 2 份待核对", box.text())
                 self.assertIn("有 2 份尚未核对。", box.text())
+                self.assertFalse(box.overwrite.isChecked())
                 labels = [button.text() for button in box.findChildren(QPushButton)]
-                self.assertIn("继续导出", labels)
+                self.assertIn("继续", labels)
                 self.assertIn("返回", labels)
 
             self._click_dialog("返回", checks)
@@ -584,7 +586,7 @@ class UITests(unittest.TestCase):
                     "values": {},
                 }
             ]
-            self._click_dialog("继续导出")
+            self._click_dialog("继续")
             with patch(
                 "app.QFileDialog.getExistingDirectory", return_value=""
             ) as choose:
@@ -602,12 +604,14 @@ class UITests(unittest.TestCase):
             )
 
             def checks(box):
-                self.assertEqual(box.windowTitle(), "批量导出结果")
+                self.assertEqual(box.windowTitle(), "导出结果")
                 self.assertIn("成功 1 份，失败 1 份。", box.text())
                 self.assertIn("甲.pdf：PDF已加密，请先解密再导入。", box.text())
                 labels = [button.text() for button in box.findChildren(QPushButton)]
                 self.assertIn("打开输出文件夹", labels)
-                self.assertIn("只重试失败项", labels)
+                self.assertTrue(
+                    any(label.startswith("只重试失败项") for label in labels)
+                )
                 self.assertIn("关闭", labels)
 
             self._click_dialog("打开输出文件夹", checks)
@@ -615,7 +619,7 @@ class UITests(unittest.TestCase):
                 action = show_export_result(window, summary, tmp, True)
             self.assertEqual(action, "open")
             opener.assert_called_once_with(tmp)
-            self._click_dialog("只重试失败项")
+            self._click_dialog("只重试失败项（1）")
             self.assertEqual(show_export_result(window, summary, tmp, True), "retry")
             self._click_dialog("关闭")
             self.assertEqual(show_export_result(window, summary, tmp, False), "close")

@@ -366,6 +366,8 @@ class StrictBatchTests(unittest.TestCase):
             failed = export_mapped_separate([second], folder, template, "管理类_件")
             self.assertFalse(done[0]["error"])
             self.assertIn("找不到模板", failed[0]["error"])
+            self.assertIn("\n模板路径：" + str(template), failed[0]["error"])
+            self.assertNotIn(str(template), failed[0]["error"].splitlines()[0])
             self.assertNotIn("Error", failed[0]["error"])
             self.assertTrue((folder / "甲.xlsx").is_file())
             self.assertFalse(list(folder.glob("乙*.xlsx")))
@@ -387,6 +389,30 @@ class StrictBatchTests(unittest.TestCase):
                 self.assertIn("\n模板路径：" + str(template), item["error"])
                 self.assertNotIn(str(template), item["error"].splitlines()[0])
                 self.assertNotIn("BadZipFile", item["error"])
+
+    def test_missing_sheet_error_names_the_path(self):
+        from openpyxl import Workbook
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            template = tmp / "缺表.xlsx"
+            book = Workbook()
+            book.active.title = "其他"
+            book.active["A1"] = "甲"
+            book.active["B1"] = "乙"
+            book.save(template)
+            book.close()
+            record = {
+                "path": "甲.pdf",
+                "status": "已核对",
+                "values": {"题名": "甲"},
+            }
+            item = export_separate([record], tmp / "out", template, "管理类_件")[0]
+            self.assertIn("管理类_件", item["error"])
+            self.assertIn("工作表", item["error"])
+            self.assertIn("\n模板路径：" + str(template), item["error"])
+            self.assertNotIn(str(template), item["error"].splitlines()[0])
+            self.assertNotIn("文件已损坏", item["error"])
 
     def test_permission_error_stays_chinese(self):
         records = [{"path": "只读.pdf", "values": {"密级": "非涉密"}}]
