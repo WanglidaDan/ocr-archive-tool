@@ -65,6 +65,11 @@ class PackageTemplateTests(unittest.TestCase):
                 names = archive.namelist()
             self.assertIn("ArchiveDesk/templates/standard_template.xlsx", names)
 
+    def test_peak_memory_reading_is_positive(self):
+        from tools.smoke_batch import peak_memory_bytes
+
+        self.assertGreater(peak_memory_bytes(), 0)
+
     def test_smoke_pdfs_are_written_into_a_new_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = write_pdfs(Path(tmp) / "pdfs")
