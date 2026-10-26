@@ -24,6 +24,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 
 from app import Window
+from batch_export import MANIFEST_COLUMNS
 from fixtures import example_template
 from template_io import inspect_template
 from tools.compare_template import compare_workbooks
@@ -49,7 +50,6 @@ EXPORTED = EXTRACTED + [
     "临时序号",
     "电子文件大小",
 ]
-MANIFEST_COLUMNS = ("文件名", "状态", "原因", "对应Excel名")
 
 
 def _cpu():
@@ -499,9 +499,13 @@ def _assemble(
     if second_manifest:
         second_text = io.StringIO(second_manifest.decode("utf-8-sig"))
         second_rows = list(csv.DictReader(second_text))
-        second_names = {row["文件名"] for row in second_rows}
-        if second_names != failed_names or len(second_rows) != len(failed_names):
-            problems.append("重试后的处理清单不是失败文件")
+        first_names = [row["文件名"] for row in rows]
+        second_names = [row["文件名"] for row in second_rows]
+        if second_names[: len(first_names)] != first_names:
+            problems.append("重试覆盖了原先的处理清单")
+        appended = second_names[len(first_names) :]
+        if set(appended) != failed_names or len(appended) != len(failed_names):
+            problems.append("重试没有把失败项追加到处理清单")
     else:
         problems.append("重试后没有处理清单")
 

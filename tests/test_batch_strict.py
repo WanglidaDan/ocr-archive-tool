@@ -211,6 +211,9 @@ class StrictBatchTests(unittest.TestCase):
                 [row["对应Excel名"] for row in rows],
                 ["发文001.xlsx", "发文001(1).xlsx"],
             )
+            self.assertIn("本批内同名", results[1]["name_note"])
+            self.assertNotIn("输出目录中已有同名文件", results[1]["name_note"])
+            self.assertNotIn("本批内同名", results[0]["name_note"])
 
     def test_overwrite_replaces_existing_file_but_not_the_sibling(self):
         from openpyxl import load_workbook
@@ -297,6 +300,8 @@ class StrictBatchTests(unittest.TestCase):
             self.assertEqual(written[1]["对应Excel名"], "ok.xlsx")
             self.assertEqual(written[0]["状态"], "失败")
             self.assertEqual(written[1]["状态"], "成功")
+            self.assertEqual(written[0]["源文件完整路径"], "locked.pdf")
+            self.assertEqual(written[2]["源文件完整路径"], "miss.pdf")
 
     def test_reserved_and_long_names_are_explained(self):
         long_name = "a" * 150 + ".pdf"
@@ -325,6 +330,18 @@ class StrictBatchTests(unittest.TestCase):
             self.assertIn(long_name, rows[1][0])
             book.close()
             self.assertIn("保留名", describe_excel_name("CON.pdf", "_CON.xlsx"))
+        self.assertIn(
+            "本批内同名",
+            describe_excel_name("发文/发文001.pdf", "发文001(1).xlsx", in_batch=True),
+        )
+        self.assertNotIn(
+            "输出目录中已有同名文件",
+            describe_excel_name("发文/发文001.pdf", "发文001(1).xlsx", in_batch=True),
+        )
+        self.assertIn(
+            "输出目录中已有同名文件",
+            describe_excel_name("发文/发文001.pdf", "发文001(1).xlsx", in_batch=False),
+        )
 
     def test_template_removed_between_files_keeps_going(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -367,6 +384,69 @@ class StrictBatchTests(unittest.TestCase):
         self.assertIn("权限", results[0]["error"])
         self.assertNotIn("Errno", results[0]["error"])
         self.assertNotIn("Permission", results[0]["error"])
+
+    def test_existing_file_note_names_the_output_folder(self):
+        record = {"path": "甲/发文001.pdf", "values": {"题名": "甲", "密级": "非涉密"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "发文001.xlsx").write_bytes(b"already")
+            results = export_separate([record], tmp, TEMPLATE, "管理类_件")
+            self.assertEqual(results[0]["excel_name"], "发文001(1).xlsx")
+            self.assertIn("输出目录中已有同名文件", results[0]["name_note"])
+            self.assertNotIn("本批内同名", results[0]["name_note"])
+
+    def test_manifest_appends_and_keeps_both_full_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            folder = tmp / "out"
+            first_path = tmp / "甲" / "同名.pdf"
+            second_path = tmp / "乙" / "同名.pdf"
+            first = {
+                "path": str(first_path),
+                "status": "已核对",
+                "text": "甲",
+                "values": {"题名": "甲"},
+            }
+            failed = {
+                "path": str(second_path),
+                "status": "失败",
+                "text": "",
+                "warning": "识别失败，未导出",
+            }
+            first_results = [
+                {
+                    "source": str(first_path),
+                    "output": str(folder / "同名.xlsx"),
+                    "excel_name": "同名.xlsx",
+                    "name_note": "",
+                    "error": "",
+                }
+            ]
+            write_manifest(folder, [first, failed], first_results)
+            retry_results = [
+                {
+                    "source": str(second_path),
+                    "output": str(folder / "同名(1).xlsx"),
+                    "excel_name": "同名(1).xlsx",
+                    "name_note": "",
+                    "error": "",
+                }
+            ]
+            write_manifest(folder, [failed], retry_results)
+            text = (folder / "处理清单.csv").read_text(encoding="utf-8-sig")
+            self.assertEqual(text.count("源文件完整路径"), 1)
+            with (folder / "处理清单.csv").open(
+                encoding="utf-8-sig", newline=""
+            ) as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(
+                [row["文件名"] for row in rows], ["同名.pdf", "同名.pdf", "同名.pdf"]
+            )
+            self.assertEqual(
+                [row["源文件完整路径"] for row in rows],
+                [str(first_path), str(second_path), str(second_path)],
+            )
+            self.assertEqual([row["状态"] for row in rows], ["成功", "失败", "成功"])
+            self.assertNotEqual(rows[0]["源文件完整路径"], rows[1]["源文件完整路径"])
 
     def test_stopped_recognition_keeps_its_reason(self):
         rows = manifest_rows(

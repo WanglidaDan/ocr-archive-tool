@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+import csv
 import json
 import sys
 import tempfile
@@ -121,6 +122,67 @@ class UITests(unittest.TestCase):
             self.assertIn("无法读取", window.template_banner.text())
             self.assertNotIn("自定义", window.template_notice)
             window.close()
+
+    def test_missing_sheet_banner_names_the_sheet(self):
+        from openpyxl import Workbook
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            book = Workbook()
+            book.active.title = "其他"
+            path = tmp / "no-piece.xlsx"
+            book.save(path)
+            book.close()
+            state = self._write_state(
+                tmp / "project.json",
+                use_template=True,
+                template_path=str(path),
+                template_sheet="管理类_件",
+            )
+            window = Window(state)
+            self.assertFalse(window.use_template)
+            self.assertIn("管理类_件", window.template_notice)
+            self.assertIn("工作表", window.template_notice)
+            self.assertNotIn("文件已损坏", window.template_notice)
+            self.assertIn("导出已停用", window.template_notice)
+            self.assertFalse(window.export_btn.isEnabled())
+            self.assertFalse(window.summary_btn.isEnabled())
+            self.assertFalse(window.template_banner.isHidden())
+            self.assertIn("管理类_件", window.template_banner.text())
+            window.close()
+
+    def test_builtin_missing_sheet_names_the_sheet(self):
+        from openpyxl import Workbook
+
+        builtin = (
+            Path(__file__).resolve().parents[1] / "templates" / "standard_template.xlsx"
+        )
+        builtin.parent.mkdir(parents=True, exist_ok=True)
+        previous = builtin.read_bytes() if builtin.exists() else None
+        book = Workbook()
+        book.active.title = "其他"
+        book.save(builtin)
+        book.close()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                window = Window(Path(tmp) / "missing-project.json")
+                self.assertFalse(window.use_template)
+                self.assertIn("管理类_件", window.template_notice)
+                self.assertIn("工作表", window.template_notice)
+                self.assertNotIn("文件已损坏", window.template_notice)
+                self.assertFalse(window.export_btn.isEnabled())
+                self.assertFalse(window.template_banner.isHidden())
+                self.assertIn("管理类_件", window.template_banner.text())
+                window.close()
+        finally:
+            if previous is None:
+                builtin.unlink(missing_ok=True)
+                try:
+                    builtin.parent.rmdir()
+                except OSError:
+                    pass
+            else:
+                builtin.write_bytes(previous)
 
     def test_corrupt_builtin_template_still_starts(self):
         builtin = (
@@ -675,13 +737,33 @@ class UITests(unittest.TestCase):
             saved = json.loads((tmp / "project.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["export_folder"], str(output))
             good_bytes = (output / "good.xlsx").read_bytes()
-            manifest = (output / "处理清单.csv").read_text(encoding="utf-8-sig")
-            self.assertIn("文件名,状态,原因,对应Excel名", manifest.replace(" ", ""))
+            manifest_path = output / "处理清单.csv"
+            with manifest_path.open(encoding="utf-8-sig", newline="") as handle:
+                manifest_rows = list(csv.DictReader(handle))
+            self.assertEqual(
+                [row["文件名"] for row in manifest_rows], ["good.pdf", "bad.pdf"]
+            )
+            self.assertEqual(manifest_rows[0]["源文件完整路径"], str(good))
+            self.assertEqual(manifest_rows[1]["源文件完整路径"], str(bad))
+            self.assertNotEqual(
+                manifest_rows[0]["源文件完整路径"],
+                manifest_rows[1]["源文件完整路径"],
+            )
             with patch("app.show_export_result", capture):
                 window.retry_failed()
                 self._wait_idle(window, 30)
             self.assertTrue((output / "bad.xlsx").is_file())
             self.assertEqual((output / "good.xlsx").read_bytes(), good_bytes)
+            with manifest_path.open(encoding="utf-8-sig", newline="") as handle:
+                kept_rows = list(csv.DictReader(handle))
+            self.assertEqual(
+                [row["文件名"] for row in kept_rows[:2]], ["good.pdf", "bad.pdf"]
+            )
+            self.assertEqual(kept_rows[0]["状态"], "成功")
+            self.assertEqual(kept_rows[0]["源文件完整路径"], str(good))
+            self.assertEqual(kept_rows[-1]["文件名"], "bad.pdf")
+            self.assertEqual(kept_rows[-1]["状态"], "成功")
+            self.assertEqual(kept_rows[-1]["源文件完整路径"], str(bad))
             self.assertIn("成功 1 份，失败 0 份。", summaries[-1][0])
             self.assertFalse(window.records[0]["export_error"])
             self.assertFalse(window.records[1]["export_error"])

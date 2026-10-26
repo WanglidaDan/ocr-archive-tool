@@ -17,7 +17,24 @@ def excel_stem(path):
     return stem
 
 
-def describe_excel_name(source, excel_name):
+def _suffix_from_batch(stem, excel_name, taken):
+    """True when this numbered name exists because an earlier file in the batch took the stem."""
+    if not excel_name or excel_name == f"{stem}.xlsx":
+        return False
+    if f"{stem}.xlsx" in taken:
+        return True
+    number = 1
+    while number < 10000:
+        candidate = f"{stem}({number}).xlsx"
+        if candidate == excel_name:
+            return False
+        if candidate in taken:
+            return True
+        number += 1
+    return False
+
+
+def describe_excel_name(source, excel_name, in_batch=False):
     """Explain a reserved-name, sanitized, truncated, or numbered workbook name."""
     original = Path(source).stem
     cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", original).strip(" .")
@@ -32,7 +49,10 @@ def describe_excel_name(source, excel_name):
         notes.append("文件名超过 80 个字符，已截断")
     stem = excel_stem(source)
     if excel_name and excel_name != f"{stem}.xlsx":
-        notes.append("输出目录中已有同名文件，已在文件名后加序号")
+        if in_batch:
+            notes.append("本批内同名，已在文件名后加序号")
+        else:
+            notes.append("输出目录中已有同名文件，已在文件名后加序号")
     return "；".join(notes)
 
 
@@ -98,6 +118,7 @@ def export_separate(
             if not_exportable(record):
                 raise ValueError(recognition_block_reason(record))
             stem = excel_stem(record["path"])
+            prior_taken = set(taken)
             while True:
                 name = choose_excel_name(stem, folder, overwrite, taken)
                 reserved = folder / name
@@ -127,7 +148,11 @@ def export_separate(
             placeholder = False
             item["output"] = str(reserved)
             item["excel_name"] = reserved.name
-            item["name_note"] = describe_excel_name(record["path"], reserved.name)
+            item["name_note"] = describe_excel_name(
+                record["path"],
+                reserved.name,
+                in_batch=_suffix_from_batch(stem, reserved.name, prior_taken),
+            )
         except Exception as error:
             item["error"] = chinese_message(error)
             if (
@@ -146,7 +171,7 @@ def export_separate(
     return results
 
 
-MANIFEST_COLUMNS = ("文件名", "状态", "原因", "对应Excel名")
+MANIFEST_COLUMNS = ("文件名", "源文件完整路径", "状态", "原因", "对应Excel名")
 
 
 def manifest_rows(records, results, stopped=False):
@@ -181,6 +206,7 @@ def _manifest_row(name, source, excel, status, reason, note):
         shown = f"{excel}（{note}）"
     return {
         "文件名": name,
+        "源文件完整路径": source,
         "状态": status,
         "原因": reason,
         "对应Excel名": excel,
@@ -238,16 +264,26 @@ def describe_batch(records, results, stopped=False):
 
 
 def write_manifest(folder, records, results, stopped=False):
-    """Write 处理清单.csv beside the exported workbooks."""
+    """Append one batch to 处理清单.csv so a later retry does not erase earlier rows."""
     import csv
 
-    path = Path(folder) / "处理清单.csv"
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "处理清单.csv"
     rows = manifest_rows(records, results, stopped=stopped)
-    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+    existing = path.is_file() and path.stat().st_size > 0
+    # utf-8-sig writes a BOM. Append with plain utf-8 so the BOM is not repeated.
+    handle = path.open(
+        "a" if existing else "w",
+        encoding="utf-8" if existing else "utf-8-sig",
+        newline="",
+    )
+    with handle:
         writer = csv.DictWriter(
             handle, fieldnames=MANIFEST_COLUMNS, extrasaction="ignore"
         )
-        writer.writeheader()
+        if not existing:
+            writer.writeheader()
         writer.writerows(rows)
     return path
 

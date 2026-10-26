@@ -248,8 +248,14 @@ def template_unavailable_message(path, reason):
     shown = path or "（未记录路径）"
     if reason == "missing":
         detail = f"找不到已保存的导出模板：{shown}"
-    else:
+    elif reason == "unreadable":
         detail = f"导出模板无法读取（文件已损坏或不是有效的 Excel）：{shown}"
+    else:
+        detail = chinese_message(reason).rstrip("。")
+    if "导出已停用" in detail:
+        if "重新选择" not in detail:
+            return detail + "。请在「字段与模型设置」中重新选择模板。"
+        return detail if detail.endswith("。") else detail + "。"
     return detail + "。导出已停用。请在「字段与模型设置」中重新选择模板。"
 
 
@@ -1515,9 +1521,9 @@ class Window(QMainWindow):
             return
         try:
             meta = inspect_template(self.template_path, self.template_sheet)
-        except Exception:
+        except Exception as error:
             self._fallback_from_template(
-                template_unavailable_message(self.template_path, "unreadable")
+                template_unavailable_message(self.template_path, error)
             )
             return
         self.use_template = True
@@ -1536,9 +1542,9 @@ class Window(QMainWindow):
         self.template_path = str(saved_template)
         try:
             meta = inspect_template(self.template_path, self.template_sheet)
-        except Exception:
+        except Exception as error:
             self._fallback_from_template(
-                template_unavailable_message(self.template_path, "unreadable")
+                template_unavailable_message(self.template_path, error)
             )
             return
         self.choices = meta["choices"]
