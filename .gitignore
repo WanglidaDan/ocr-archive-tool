@@ -1,0 +1,10 @@
+.venv/
+runtime/
+wheels/
+__pycache__/
+*.pyc
+*.xlsx
+*.pdf
+project.json
+*.log
+startup-error.txt
