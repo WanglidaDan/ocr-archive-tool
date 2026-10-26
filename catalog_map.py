@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from catalog_defaults import DEFAULTS
+from catalog_defaults import effective_defaults
 from extraction import normalize_date
 from unit_link import unit_key
 
@@ -24,11 +24,24 @@ def _text(value):
     return str(value).strip()
 
 
-def map_piece(record, choices, order):
+def _chosen(value, field, choices):
+    """Keep free text. A dropdown field must match one entry or stay blank."""
+    text = _text(value)
+    options = choices.get(field) or []
+    if not text:
+        return ""
+    if options:
+        return exact_option(text, options)
+    return text
+
+
+def map_piece(record, choices, order, defaults=None):
     """Build cell values for one 管理类_件 row.
 
-    Blank fields are omitted so the template cell stays empty. DEFAULTS is
-    applied last; an empty default does not write the column.
+    Blank fields are omitted so the template cell stays empty. A value already
+    on the record wins over the default. Dropdown defaults that are not in the
+    template are omitted. 归档单位 uses the responsibility match, then a
+    manually chosen dropdown value; otherwise it stays blank.
     """
     values = record.get("values") or {}
     mapped = {}
@@ -54,15 +67,23 @@ def map_piece(record, choices, order):
     put("正本数量", values.get("正本数量"))
     put("文件编号", values.get("文件编号") or values.get("文号"))
     put("密级", exact_option(values.get("密级"), choices.get("密级", [])))
-    put("归档单位", exact_option(responsible, choices.get("归档单位", [])))
+    put(
+        "归档单位",
+        _chosen(responsible, "归档单位", choices)
+        or _chosen(values.get("归档单位"), "归档单位", choices),
+    )
     put(
         "归档单位(系统生成)",
-        exact_option(responsible, choices.get("归档单位(系统生成)", [])),
+        _chosen(responsible, "归档单位(系统生成)", choices),
     )
     put("电子文件数量", "1")
     put("临时序号", order)
     if path:
         put("电子文件关联项", Path(path).name)
-    for field, value in DEFAULTS.items():
-        put(field, value)
+    for field, value in effective_defaults(defaults).items():
+        put(
+            field,
+            _chosen(values.get(field), field, choices)
+            or _chosen(value, field, choices),
+        )
     return mapped

@@ -4,6 +4,7 @@ from datetime import datetime
 import math
 from pathlib import Path
 from copy import copy
+from catalog_defaults import DEFAULT_SHEET
 from extraction import canonical, normalize_date
 
 NUMERIC = {
@@ -58,7 +59,12 @@ def inspect_template(path, sheet=None):
 
     book = load_workbook(path)
     names = [s.title for s in book if s.max_column > 1 and s.cell(1, 1).value]
-    selected = sheet if sheet in names else names[0] if names else None
+    if sheet in names:
+        selected = sheet
+    elif DEFAULT_SHEET in names:
+        selected = DEFAULT_SHEET
+    else:
+        selected = names[0] if names else None
     if selected is None:
         raise ValueError("没有找到包含表头的目录工作表")
     ws = book[selected]

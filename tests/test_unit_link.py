@@ -30,6 +30,21 @@ class UnitLinkTests(unittest.TestCase):
         self.assertTrue(link_record(r, ["公司-档案馆"]))
         self.assertEqual(r["values"]["归档单位"], "")
 
+    def test_unmatched_unit_stays_blank_and_needs_review(self):
+        record = {
+            "status": "已核对",
+            "text": "原文",
+            "values": {"责任者": "不存在的单位"},
+        }
+        self.assertTrue(link_record(record, ["示例单位A", "示例单位B"]))
+        self.assertEqual(record["values"]["归档单位"], "")
+        self.assertEqual(record["status"], "待核对")
+        self.assertIn("已留空", record["warning"])
+        self.assertIn("人工核对", record["warning"])
+        self.assertFalse(link_record(record, ["示例单位A", "示例单位B"]))
+        self.assertEqual(record["values"]["归档单位"], "")
+        self.assertEqual(record["status"], "待核对")
+
     def test_blank_responsible_clears_stale_unit(self):
         r = {"values": {"责任者": "", "归档单位": "旧单位"}}
         self.assertTrue(link_record(r, ["公司-档案馆"]))

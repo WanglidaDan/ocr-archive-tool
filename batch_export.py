@@ -66,7 +66,7 @@ def export_separate(
     return results
 
 
-def _with_mapping(records, template, sheet):
+def _with_mapping(records, template, sheet, defaults=None):
     from catalog_map import map_piece
     from template_io import inspect_template
 
@@ -75,7 +75,10 @@ def _with_mapping(records, template, sheet):
     for fallback, record in enumerate(records, 1):
         item = dict(record)
         item["values"] = map_piece(
-            record, meta["choices"], record.get("export_order", fallback)
+            record,
+            meta["choices"],
+            record.get("export_order", fallback),
+            defaults,
         )
         prepared.append(item)
     return prepared
@@ -88,10 +91,11 @@ def export_mapped_separate(
     sheet,
     cancelled=lambda: False,
     progress=lambda i, r: None,
+    defaults=None,
 ):
     """One workbook per scan, with 管理类_件 values filled from the mapping rules."""
     return export_separate(
-        _with_mapping(records, template, sheet),
+        _with_mapping(records, template, sheet, defaults),
         folder,
         template,
         sheet,
@@ -100,13 +104,19 @@ def export_mapped_separate(
     )
 
 
-def write_summary(path, records, template, sheet="管理类_件"):
-    """Write every scan into rows 2..N of one 管理类_件 sheet."""
+def write_summary(path, records, template, sheet="管理类_件", defaults=None):
+    """Write every scan into rows 2..N of one catalog sheet, defaulting to 管理类_件."""
+    from catalog_defaults import DEFAULT_SHEET
     from template_io import export_rows
 
+    sheet = sheet or DEFAULT_SHEET
     for record in records:
         if record.get("status") in ("待识别", "处理失败"):
             raise ValueError("文件尚未识别成功：" + str(record.get("path", "")))
     export_rows(
-        path, _with_mapping(records, template, sheet), template, sheet, start_row=2
+        path,
+        _with_mapping(records, template, sheet, defaults),
+        template,
+        sheet,
+        start_row=2,
     )

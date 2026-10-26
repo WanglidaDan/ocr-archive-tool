@@ -11,7 +11,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from PySide6.QtWidgets import QApplication
+from openpyxl import load_workbook
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QComboBox, QDialogButtonBox, QWidget
 from app import Window, STYLE
 from fixtures import example_scan, example_template
 
@@ -157,6 +159,129 @@ class UITests(unittest.TestCase):
             window = Window(state)
             self.assertFalse(window.use_template)
             self.assertIsNone(window.template_notice)
+            window.close()
+
+    def test_builtin_defaults_and_sheet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            window = Window(Path(tmp) / "missing-project.json")
+            self.assertEqual(window.template_sheet, "管理类_件")
+            self.assertEqual(window.catalog_defaults["保管期限"], "30年")
+            self.assertEqual(window.catalog_defaults["载体类型"], "纸质")
+            self.assertEqual(window.catalog_defaults["来源"], "")
+            self.assertEqual(window.catalog_defaults["职能标签"], "")
+            window.close()
+
+    def test_invalid_saved_default_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = self._write_state(
+                Path(tmp) / "project.json",
+                use_template=True,
+                template_path=str(example_template()),
+                template_sheet="管理类_件",
+                catalog_defaults={"保管期限": "不存在", "载体类型": "纸质"},
+            )
+            window = Window(state)
+            self.assertTrue(window.use_template)
+            self.assertIn("保管期限", window.defaults_notice)
+            self.assertIn("不存在", window.defaults_notice)
+            self.assertEqual(window.status.text(), window.defaults_notice)
+            window.close()
+
+    def _open_settings(self, window, edit):
+        QTimer.singleShot(0, edit)
+        window.settings()
+
+    def test_settings_saves_defaults_and_export_uses_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            state = self._write_state(
+                tmp / "project.json",
+                use_template=True,
+                template_path=str(example_template()),
+                template_sheet="管理类_件",
+            )
+            window = Window(state)
+
+            def edit():
+                dialog = QApplication.activeModalWidget()
+                self.assertEqual(
+                    dialog.findChild(QComboBox, "template-sheet").currentText(),
+                    "管理类_件",
+                )
+                dialog.findChild(QWidget, "default:保管期限").setText("永久")
+                dialog.findChild(QWidget, "default:载体类型").setText("照片")
+                dialog.findChild(QWidget, "default:来源").setText("人工来源")
+                dialog.findChild(QWidget, "default:保密期限").setText("")
+                dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Save).click()
+
+            self._open_settings(window, edit)
+            self.assertEqual(window.catalog_defaults["保管期限"], "永久")
+            self.assertEqual(window.catalog_defaults["载体类型"], "照片")
+            self.assertEqual(window.catalog_defaults["来源"], "人工来源")
+            self.assertEqual(window.catalog_defaults["保密期限"], "")
+            self.assertEqual(window.template_sheet, "管理类_件")
+            window.close()
+            restored = Window(state)
+            self.assertEqual(restored.catalog_defaults["保管期限"], "永久")
+            self.assertEqual(restored.catalog_defaults["载体类型"], "照片")
+            self.assertEqual(restored.catalog_defaults["来源"], "人工来源")
+            scan = tmp / "甲.png"
+            scan.write_bytes(b"abc")
+            restored.records = [
+                {
+                    "path": str(scan),
+                    "text": "原文",
+                    "status": "待核对",
+                    "values": {"题名": "设置导出", "责任者": "没有这个单位"},
+                }
+            ]
+            output = tmp / "汇总.xlsx"
+            with (
+                patch(
+                    "app.QFileDialog.getSaveFileName",
+                    return_value=(str(output), ""),
+                ),
+                patch("app.QMessageBox.information"),
+                patch("app.QMessageBox.warning") as warning,
+            ):
+                restored.export_summary()
+            self.assertFalse(warning.called)
+            book = load_workbook(output)
+            sheet = book["管理类_件"]
+            self.assertEqual(sheet["D2"].value, "设置导出")
+            self.assertEqual(sheet["H2"].value, "永久")
+            self.assertEqual(sheet["I2"].value, "照片")
+            self.assertEqual(sheet["AB2"].value, "人工来源")
+            self.assertIsNone(sheet["G2"].value)
+            self.assertIsNone(sheet["L2"].value)
+            book.close()
+            restored.close()
+
+    def test_settings_rejects_default_outside_dropdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = self._write_state(
+                Path(tmp) / "project.json",
+                use_template=True,
+                template_path=str(example_template()),
+                template_sheet="管理类_件",
+            )
+            window = Window(state)
+
+            def edit():
+                dialog = QApplication.activeModalWidget()
+                dialog.findChild(QWidget, "default:载体类型").setText("塑料")
+                dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Save).click()
+                self.assertTrue(dialog.isVisible())
+                dialog.findChild(QDialogButtonBox).button(
+                    QDialogButtonBox.Cancel
+                ).click()
+
+            with patch("app.QMessageBox.warning") as warning:
+                self._open_settings(window, edit)
+            self.assertEqual(warning.call_args.args[1], "默认值无效")
+            self.assertIn("载体类型", warning.call_args.args[2])
+            self.assertEqual(window.catalog_defaults["载体类型"], "纸质")
+            self.assertEqual(window.catalog_defaults["保管期限"], "30年")
             window.close()
 
 

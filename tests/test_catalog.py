@@ -10,7 +10,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from openpyxl import load_workbook
 from batch_export import export_mapped_separate, write_summary
-from catalog_defaults import DEFAULTS
+from catalog_defaults import (
+    DEFAULTS,
+    DEFAULT_SHEET,
+    effective_defaults,
+    validate_defaults,
+)
 from catalog_map import map_piece
 from fixtures import (
     INNER_HEADERS,
@@ -73,8 +78,17 @@ class FakeTemplateTests(unittest.TestCase):
                     self.assertNotIn(banned, option)
         book.close()
 
-    def test_mapping_and_empty_defaults(self):
-        self.assertTrue(all(value == "" for value in DEFAULTS.values()))
+    def test_mapping_and_builtin_defaults(self):
+        self.assertEqual(DEFAULT_SHEET, "管理类_件")
+        self.assertEqual(DEFAULTS["保管期限"], "30年")
+        self.assertEqual(DEFAULTS["载体类型"], "纸质")
+        self.assertTrue(
+            all(
+                value == ""
+                for field, value in DEFAULTS.items()
+                if field not in ("保管期限", "载体类型")
+            )
+        )
         meta = inspect_template(TEMPLATE, "管理类_件")
         with tempfile.TemporaryDirectory() as tmp:
             scan = Path(tmp) / "扫描件.png"
@@ -106,8 +120,11 @@ class FakeTemplateTests(unittest.TestCase):
             self.assertEqual(mapped["电子文件数量"], "1")
             self.assertEqual(mapped["电子文件关联项"], "扫描件.png")
             self.assertEqual(mapped["电子文件大小"], "5")
-            for field in DEFAULTS:
-                self.assertNotIn(field, mapped)
+            self.assertEqual(mapped["保管期限"], "30年")
+            self.assertEqual(mapped["载体类型"], "纸质")
+            for field, value in DEFAULTS.items():
+                if not value:
+                    self.assertNotIn(field, mapped)
             unknown = map_piece(
                 {
                     "path": str(scan),
@@ -118,6 +135,65 @@ class FakeTemplateTests(unittest.TestCase):
             )
             self.assertNotIn("密级", unknown)
             self.assertNotIn("归档单位", unknown)
+            self.assertNotIn("归档单位(系统生成)", unknown)
+            manual = map_piece(
+                {
+                    "path": str(scan),
+                    "values": {"责任者": "不存在的单位", "归档单位": "示例单位B"},
+                },
+                meta["choices"],
+                1,
+            )
+            self.assertEqual(manual["归档单位"], "示例单位B")
+            self.assertNotIn("归档单位(系统生成)", manual)
+            overridden = map_piece(
+                {"values": {"保管期限": "永久", "载体类型": "不存在的载体"}},
+                meta["choices"],
+                1,
+            )
+            self.assertEqual(overridden["保管期限"], "永久")
+            self.assertEqual(overridden["载体类型"], "纸质")
+            cleared, error = validate_defaults({"保管期限": ""}, meta["choices"])
+            self.assertEqual(error, "")
+            self.assertEqual(cleared["保管期限"], "")
+            self.assertEqual(cleared["载体类型"], "纸质")
+            omitted = map_piece(
+                {"values": {}},
+                meta["choices"],
+                1,
+                {"保管期限": "不存在", "载体类型": "照片"},
+            )
+            self.assertNotIn("保管期限", omitted)
+            self.assertEqual(omitted["载体类型"], "照片")
+            blanked = map_piece({"values": {}}, meta["choices"], 1, {"保管期限": ""})
+            self.assertNotIn("保管期限", blanked)
+            self.assertEqual(blanked["载体类型"], "纸质")
+            rejected, error = validate_defaults(
+                {"保管期限": "不存在", "载体类型": "纸质"}, meta["choices"]
+            )
+            self.assertIn("保管期限", error)
+            self.assertIn("不存在", error)
+            self.assertEqual(
+                effective_defaults({"来源": "人工来源"})["来源"], "人工来源"
+            )
+
+    def test_default_sheet_prefers_piece_catalog(self):
+        from openpyxl import Workbook
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sheets.xlsx"
+            book = Workbook()
+            other = book.active
+            other.title = "其他"
+            other["A1"] = "甲"
+            other["B1"] = "乙"
+            piece = book.create_sheet("管理类_件")
+            piece["A1"] = "题名"
+            piece["B1"] = "责任者"
+            book.save(path)
+            book.close()
+            self.assertEqual(inspect_template(path)["sheet"], "管理类_件")
+            self.assertEqual(inspect_template(path, "其他")["sheet"], "其他")
 
     def test_summary_preserves_template_and_leaves_volumes_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -171,7 +247,10 @@ class FakeTemplateTests(unittest.TestCase):
             self.assertEqual(sheet["C3"].value, 4)
             self.assertIsNone(sheet["K3"].value)
             self.assertIsNone(sheet["G3"].value)
-            self.assertIsNone(sheet["H2"].value)
+            self.assertEqual(sheet["H2"].value, "30年")
+            self.assertEqual(sheet["I2"].value, "纸质")
+            self.assertEqual(sheet["H3"].value, "30年")
+            self.assertIsNone(sheet["L2"].value)
             self.assertIsNone(sheet["D4"].value)
             self.assertTrue(all(cell.value is None for cell in book["管理类_卷"][2]))
             self.assertTrue(

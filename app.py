@@ -33,6 +33,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
 )
 from batch_export import export_mapped_separate, write_summary
+from catalog_defaults import (
+    DEFAULTS,
+    DEFAULT_SHEET,
+    effective_defaults,
+    validate_defaults,
+)
 from unit_link import link_record
 from extraction import canonical, normalize_date, extract_details
 from template_io import inspect_template, export_template, standard_value
@@ -144,12 +150,13 @@ class ExportWorker(QThread):
     item = Signal(int, object)
     message = Signal(str)
 
-    def __init__(self, jobs, folder, template, sheet):
+    def __init__(self, jobs, folder, template, sheet, defaults=None):
         super().__init__()
         self.jobs = jobs
         self.folder = folder
         self.template = template
         self.sheet = sheet
+        self.defaults = defaults
         self.results = []
 
     def run(self):
@@ -158,7 +165,11 @@ class ExportWorker(QThread):
                 break
             self.message.emit("正在分开导出 · " + Path(record["path"]).name)
             result = export_mapped_separate(
-                [record], self.folder, self.template, self.sheet
+                [record],
+                self.folder,
+                self.template,
+                self.sheet,
+                defaults=self.defaults,
             )[0]
             self.results.append(result)
             self.item.emit(index, result)
@@ -199,10 +210,12 @@ class Window(QMainWindow):
         builtin = Path(__file__).resolve().parent / "templates/standard_template.xlsx"
         self.auto_unit = True
         self.template_path = str(builtin)
-        self.template_sheet = "管理类_件"
+        self.template_sheet = DEFAULT_SHEET
         self.use_template = False
         self.choices = {}
+        self.catalog_defaults = effective_defaults(None)
         self.template_notice = None
+        self.defaults_notice = None
         self._template_notice_shown = False
         self._try_builtin_template(builtin)
         try:
@@ -213,10 +226,12 @@ class Window(QMainWindow):
             self.auto_unit = state.get("auto_unit", True)
             self.use_template = state.get("use_template", False)
             saved_template = state.get("template_path", self.template_path)
-            self.template_sheet = state.get("template_sheet", self.template_sheet)
+            self.template_sheet = state.get("template_sheet") or DEFAULT_SHEET
+            self.catalog_defaults = effective_defaults(state.get("catalog_defaults"))
             self._try_saved_template(saved_template)
         except (OSError, ValueError, KeyError):
             pass
+        self._refresh_defaults_notice()
         for record in self.records:
             if link_record(
                 record,
@@ -369,7 +384,9 @@ class Window(QMainWindow):
             )
             + " · 所有材料保留在本机"
         )
-        self.status = label(self.template_notice or ready, "subtitle")
+        self.status = label(
+            self.template_notice or self.defaults_notice or ready, "subtitle"
+        )
         content.addWidget(self.status)
         self.build_form()
         self.refresh()
@@ -449,6 +466,7 @@ class Window(QMainWindow):
                         "use_template": self.use_template,
                         "template_path": self.template_path,
                         "template_sheet": self.template_sheet,
+                        "catalog_defaults": self.catalog_defaults,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -825,7 +843,11 @@ class Window(QMainWindow):
                     item["export_order"] = index + 1
                     jobs.append((index, item))
             self.export_worker = ExportWorker(
-                jobs, folder, self.template_path, self.template_sheet
+                jobs,
+                folder,
+                self.template_path,
+                self.template_sheet,
+                self.catalog_defaults,
             )
             self.export_worker.item.connect(self.export_received)
             self.export_worker.message.connect(self.status.setText)
@@ -913,14 +935,20 @@ class Window(QMainWindow):
         if not path.lower().endswith(".xlsx"):
             path += ".xlsx"
         try:
-            write_summary(path, records, self.template_path, self.template_sheet)
+            write_summary(
+                path,
+                records,
+                self.template_path,
+                self.template_sheet or DEFAULT_SHEET,
+                self.catalog_defaults,
+            )
         except Exception as error:
             QMessageBox.warning(self, "汇总导出失败", str(error))
             return
         QMessageBox.information(
             self,
             "汇总导出完成",
-            f"已把 {len(records)} 份文件写入「管理类_件」第2行起。\n卷和卷内件保持为空。\n"
+            f"已把 {len(records)} 份文件写入「{self.template_sheet or DEFAULT_SHEET}」第2行起。\n卷和卷内件保持为空。\n"
             + path,
         )
 
@@ -930,7 +958,7 @@ class Window(QMainWindow):
             return
         dlg = QDialog(self)
         dlg.setWindowTitle("采集模板与本地模型")
-        dlg.resize(620, 680)
+        dlg.resize(640, 820)
         layout = QVBoxLayout(dlg)
         layout.addWidget(label("导出格式", "section"))
         mode = QComboBox()
@@ -941,18 +969,57 @@ class Window(QMainWindow):
         path_edit.setReadOnly(True)
         layout.addWidget(path_edit)
         sheets = QComboBox()
+        sheets.setObjectName("template-sheet")
         layout.addWidget(sheets)
         edit = QPlainTextEdit("\n".join(self.fields))
+        edit.setMaximumHeight(120)
         layout.addWidget(edit)
+        default_inputs = {}
+        pending = {"defaults": None}
+
+        def current_default_texts():
+            if not default_inputs:
+                return dict(self.catalog_defaults)
+            return {
+                field: widget.text().strip() for field, widget in default_inputs.items()
+            }
+
+        def rebuild_defaults(choices):
+            existing = current_default_texts()
+            while defaults_form.rowCount():
+                defaults_form.removeRow(0)
+            default_inputs.clear()
+            for field in DEFAULTS:
+                options = list((choices or {}).get(field) or [])
+                if mode.currentIndex() == 0 and options:
+                    widget = ChoiceEdit(options)
+                else:
+                    widget = QLineEdit()
+                widget.setObjectName("default:" + field)
+                widget.setText(existing.get(field, DEFAULTS[field]))
+                defaults_form.addRow(field, widget)
+                default_inputs[field] = widget
 
         def sync_fields():
+            choices = {}
             if mode.currentIndex() == 0 and sheets.currentText():
-                meta = inspect_template(path_edit.text(), sheets.currentText())
-                edit.setPlainText("\n".join(meta["headers"]))
+                try:
+                    meta = inspect_template(path_edit.text(), sheets.currentText())
+                except Exception:
+                    meta = None
+                if meta is not None:
+                    edit.setPlainText("\n".join(meta["headers"]))
+                    choices = meta["choices"]
             edit.setReadOnly(mode.currentIndex() == 0)
+            target = sheets.currentText() or DEFAULT_SHEET
+            defaults_hint.setText(
+                f"导出目标表默认是「{DEFAULT_SHEET}」，当前为「{target}」。"
+                "下拉默认值必须与该表一致，留空则不填。"
+            )
+            rebuild_defaults(choices)
 
         def load_template(path, selected=None):
-            meta = inspect_template(path, selected)
+            meta = inspect_template(path, selected or DEFAULT_SHEET)
             path_edit.setText(path)
             sheets.blockSignals(True)
             sheets.clear()
@@ -973,12 +1040,24 @@ class Window(QMainWindow):
                 QMessageBox.warning(dlg, "模板读取失败", str(e))
 
         layout.addWidget(button("选择其他标准 Excel 模板", choose_template))
+        layout.addWidget(label("目录默认值", "section"))
+        defaults_hint = label("", "subtitle")
+        defaults_hint.setWordWrap(True)
+        layout.addWidget(defaults_hint)
+        defaults_scroll = QScrollArea()
+        defaults_scroll.setWidgetResizable(True)
+        defaults_scroll.setMaximumHeight(220)
+        defaults_host = QWidget()
+        defaults_form = QFormLayout(defaults_host)
+        defaults_scroll.setWidget(defaults_host)
+        layout.addWidget(defaults_scroll)
         sheets.currentTextChanged.connect(sync_fields)
         mode.currentIndexChanged.connect(sync_fields)
         try:
-            load_template(self.template_path, self.template_sheet)
+            load_template(self.template_path, self.template_sheet or DEFAULT_SHEET)
         except Exception:
             mode.setCurrentIndex(1)
+            sync_fields()
         layout.addWidget(label("可选：本机 Ollama 模型", "section"))
         model = QLineEdit(self.model)
         model.setPlaceholderText("留空使用离线 OCR 与规则")
@@ -989,8 +1068,30 @@ class Window(QMainWindow):
         )
         note.setWordWrap(True)
         layout.addWidget(note)
+
+        def commit_settings():
+            use_template_now = mode.currentIndex() == 0
+            choices = {}
+            if use_template_now and sheets.currentText():
+                try:
+                    choices = inspect_template(path_edit.text(), sheets.currentText())[
+                        "choices"
+                    ]
+                except Exception as error:
+                    QMessageBox.warning(dlg, "模板读取失败", str(error))
+                    return
+            cleaned, error = validate_defaults(
+                current_default_texts(),
+                choices if use_template_now else {},
+            )
+            if error:
+                QMessageBox.warning(dlg, "默认值无效", error)
+                return
+            pending["defaults"] = cleaned
+            dlg.accept()
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dlg.accept)
+        buttons.accepted.connect(commit_settings)
         buttons.rejected.connect(dlg.reject)
         layout.addWidget(buttons)
         if dlg.exec() != QDialog.Accepted:
@@ -1055,6 +1156,20 @@ class Window(QMainWindow):
             )
         self.build_form()
         self.model = model.text().strip()
+        self.catalog_defaults = pending["defaults"]
+        self._refresh_defaults_notice()
+        if not self.template_notice:
+            self.status.setText(
+                self.defaults_notice
+                or (
+                    "就绪 · "
+                    + (
+                        "标准模板：" + self.template_sheet
+                        if self.use_template
+                        else "自定义核对工作簿"
+                    )
+                )
+            )
         self.dirty = True
         self.load_record()
         self.save()
@@ -1109,6 +1224,16 @@ class Window(QMainWindow):
         self.use_template = False
         self.choices = {}
         self.template_notice = message
+
+    def _refresh_defaults_notice(self):
+        self.defaults_notice = None
+        if not self.use_template:
+            return
+        _values, error = validate_defaults(self.catalog_defaults, self.choices)
+        if error:
+            self.defaults_notice = (
+                error + "。导出时这些项会留空。请在「字段与模型设置」中修改。"
+            )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

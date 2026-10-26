@@ -37,7 +37,7 @@ set QT_QPA_PLATFORM=offscreen
 
 Linux 需要中文字体（例如 `fonts-wqy-microhei`）以及 Qt offscreen 平台库。GitHub Actions 在 Python 3.11 上执行同一套测试。
 
-`templates/standard_template.xlsx` 是本机私有模板，已写入 `.gitignore`，不要提交。程序在该文件存在时默认用它，缺失或损坏时改为自定义核对模式。打包前运行 `Build.cmd`，缺少该文件会直接停止。公开测试使用代码生成的假模板。汇总导出把多份扫描写入同一工作簿的「管理类_件」；`python tools/compare_template.py <模板> <导出文件>` 检查除数据单元格外是否与模板一致。固定默认值在 `catalog_defaults.py`，目前全部留空。
+`templates/standard_template.xlsx` 是本机私有模板，已写入 `.gitignore`，不要提交。程序在该文件存在时默认用它，缺失或损坏时改为自定义核对模式。打包前运行 `Build.cmd`，缺少该文件会直接停止。公开测试使用代码生成的假模板。汇总导出把多份扫描写入同一工作簿的「管理类_件」；`python tools/compare_template.py <模板> <导出文件>` 检查除数据单元格外是否与模板一致。目录默认值在 `catalog_defaults.py`：保管期限为「30年」，载体类型为「纸质」，其余留空。这些值可在「字段与模型设置」中修改，保存在本机项目文件里，并按当前模板的下拉项校验。目标工作表默认是「管理类_件」。归档单位匹配不到时留空，记录回到待核对。
 
 ## 许可证
 
