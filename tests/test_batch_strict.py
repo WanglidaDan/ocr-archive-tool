@@ -1,9 +1,16 @@
-import sys, unittest, tempfile, zipfile, re
+import csv, os, sys, unittest, tempfile, zipfile, re
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from batch_export import describe_batch, export_separate
+from batch_export import (
+    MANIFEST_COLUMNS,
+    describe_batch,
+    export_separate,
+    manifest_rows,
+    write_manifest,
+)
 from extraction import extract_details
 from fixtures import example_template
 
@@ -74,7 +81,7 @@ class StrictBatchTests(unittest.TestCase):
             self.assertEqual(len(results), 2)
             self.assertTrue(all(not r["error"] for r in results))
             self.assertEqual(Path(results[0]["output"]).name, "同名.xlsx")
-            self.assertEqual(Path(results[1]["output"]).name, "同名_2.xlsx")
+            self.assertEqual(Path(results[1]["output"]).name, "同名(1).xlsx")
             self.assertNotEqual(results[0]["output"], results[1]["output"])
             for record, result in zip(records, results):
                 b = load_workbook(result["output"])
@@ -113,7 +120,7 @@ class StrictBatchTests(unittest.TestCase):
                     self.assertEqual(aa, zz)
             old = Path(results[0]["output"]).read_bytes()
             more = export_separate(records[:1], tmp, TEMPLATE, "管理类_件")
-            self.assertEqual(Path(more[0]["output"]).name, "同名_3.xlsx")
+            self.assertEqual(Path(more[0]["output"]).name, "同名(2).xlsx")
             self.assertNotEqual(more[0]["output"], results[0]["output"])
             self.assertEqual(Path(results[0]["output"]).read_bytes(), old)
 
@@ -138,10 +145,10 @@ class StrictBatchTests(unittest.TestCase):
                 ],
                 results,
             )
-            self.assertIn("成功 1 份，失败 2 份，待核对 0 份。", summary)
+            self.assertIn("成功 1 份，失败 2 份。", summary)
             self.assertIn("bad.pdf：", summary)
             self.assertIn("miss.pdf：尚未识别成功，未导出", summary)
-            self.assertNotIn("待核对：", summary)
+            self.assertNotIn("待核对", summary)
 
     def test_summary_counts_review_separately_from_failure(self):
         text = describe_batch(
@@ -154,9 +161,8 @@ class StrictBatchTests(unittest.TestCase):
                 {"source": "b.pdf", "output": "b.xlsx", "error": ""},
             ],
         )
-        self.assertIn("成功 2 份，失败 0 份，待核对 1 份。", text)
-        self.assertIn("待核对：a.pdf", text)
-        self.assertNotIn("b.pdf", text.split("待核对：", 1)[-1])
+        self.assertIn("成功 2 份，失败 0 份。", text)
+        self.assertNotIn("失败：", text)
 
     def test_stop_before_start_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -171,6 +177,122 @@ class StrictBatchTests(unittest.TestCase):
                 [],
             )
             self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_same_stem_from_two_folders_gets_numbered_suffix(self):
+        records = [
+            {
+                "path": "收文/发文001.pdf",
+                "values": {"题名": "第一份", "密级": "非涉密"},
+            },
+            {
+                "path": "发文/发文001.pdf",
+                "values": {"题名": "第二份", "密级": "非涉密"},
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            results = export_separate(records, tmp, TEMPLATE, "管理类_件")
+            self.assertEqual(
+                [item["excel_name"] for item in results],
+                ["发文001.xlsx", "发文001(1).xlsx"],
+            )
+            self.assertTrue(all(not item["error"] for item in results))
+            rows = manifest_rows(records, results)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                sum(row["状态"] == "成功" for row in rows)
+                + sum(row["状态"] == "失败" for row in rows),
+                len(records),
+            )
+            self.assertEqual(
+                [row["对应Excel名"] for row in rows],
+                ["发文001.xlsx", "发文001(1).xlsx"],
+            )
+
+    def test_overwrite_replaces_existing_file_but_not_the_sibling(self):
+        from openpyxl import load_workbook
+
+        seed = {
+            "path": "旧/发文001.pdf",
+            "values": {"题名": "旧文件", "密级": "非涉密"},
+        }
+        records = [
+            {"path": "甲/发文001.pdf", "values": {"题名": "第一份", "密级": "非涉密"}},
+            {"path": "乙/发文001.pdf", "values": {"题名": "第二份", "密级": "非涉密"}},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            export_separate([seed], tmp, TEMPLATE, "管理类_件")
+            original = (Path(tmp) / "发文001.xlsx").read_bytes()
+            kept = export_separate(records, tmp, TEMPLATE, "管理类_件", overwrite=False)
+            self.assertEqual(kept[0]["excel_name"], "发文001(1).xlsx")
+            self.assertEqual(kept[1]["excel_name"], "发文001(2).xlsx")
+            self.assertEqual((Path(tmp) / "发文001.xlsx").read_bytes(), original)
+            replaced = export_separate(
+                records[:1], tmp, TEMPLATE, "管理类_件", overwrite=True
+            )
+            self.assertEqual(replaced[0]["excel_name"], "发文001.xlsx")
+            self.assertNotEqual((Path(tmp) / "发文001.xlsx").read_bytes(), original)
+            book = load_workbook(replaced[0]["output"])
+            self.assertEqual(book["管理类_件"]["D2"].value, "第一份")
+            book.close()
+            sibling = (Path(tmp) / "发文001(1).xlsx").read_bytes()
+            again = export_separate(records, tmp, TEMPLATE, "管理类_件", overwrite=True)
+            self.assertEqual(again[0]["excel_name"], "发文001.xlsx")
+            self.assertEqual(again[1]["excel_name"], "发文001(1).xlsx")
+            self.assertNotEqual((Path(tmp) / "发文001(1).xlsx").read_bytes(), sibling)
+
+    def test_locked_workbook_is_one_failure_and_others_continue(self):
+        records = [
+            {"path": "locked.pdf", "values": {"密级": "非涉密", "题名": "被占用"}},
+            {"path": "ok.pdf", "values": {"密级": "非涉密", "题名": "正常"}},
+            {
+                "path": "miss.pdf",
+                "status": "处理失败",
+                "warning": "PDF已加密，请先解密再导入。",
+                "values": {},
+            },
+        ]
+        real_replace = os.replace
+
+        def locked(src, dst):
+            if Path(dst).name.startswith("locked"):
+                raise PermissionError("locked by Excel")
+            return real_replace(src, dst)
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("batch_export.os.replace", locked),
+        ):
+            results = export_separate(records, tmp, TEMPLATE, "管理类_件")
+            self.assertEqual(len(results), 3)
+            self.assertIn("无法写入 Excel，文件可能正被占用", results[0]["error"])
+            self.assertFalse(results[1]["error"])
+            self.assertIn("加密", results[2]["error"])
+            names = sorted(path.name for path in Path(tmp).glob("*.xlsx"))
+            self.assertEqual(names, ["ok.xlsx"])
+            rows = manifest_rows(records, results)
+            self.assertEqual(
+                sum(row["状态"] == "成功" for row in rows)
+                + sum(row["状态"] == "失败" for row in rows),
+                3,
+            )
+            summary = describe_batch(records, results)
+            self.assertIn("成功 1 份，失败 2 份。", summary)
+            self.assertIn(
+                "locked.pdf：无法写入 Excel，文件可能正被占用：locked.xlsx", summary
+            )
+            self.assertIn("miss.pdf：PDF已加密，请先解密再导入。", summary)
+            manifest = write_manifest(tmp, records, results)
+            self.assertEqual(manifest.name, "处理清单.csv")
+            with manifest.open(encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                self.assertEqual(tuple(reader.fieldnames), MANIFEST_COLUMNS)
+                written = list(reader)
+            self.assertEqual(
+                [row["文件名"] for row in written], ["locked.pdf", "ok.pdf", "miss.pdf"]
+            )
+            self.assertEqual(written[1]["对应Excel名"], "ok.xlsx")
+            self.assertEqual(written[0]["状态"], "失败")
+            self.assertEqual(written[1]["状态"], "成功")
 
 
 if __name__ == "__main__":

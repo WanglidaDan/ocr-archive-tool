@@ -76,6 +76,18 @@ class Processor:
         from PIL import Image, ImageOps
         from rapidocr_onnxruntime import RapidOCR
 
+        pdf = None
+        if Path(path).suffix.lower() == ".pdf":
+            try:
+                pdf = fitz.open(path)
+            except Exception:
+                raise ValueError("PDF无法读取（文件已损坏或不是有效的 PDF）。")
+            if pdf.needs_pass:
+                pdf.close()
+                raise ValueError("PDF已加密，请先解密再导入。")
+            if pdf.page_count < 1:
+                pdf.close()
+                raise ValueError("PDF没有页面，无法识别。")
         if self.engine is None:
             self.engine = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
         texts, scores, rows = [], [], []
@@ -109,11 +121,9 @@ class Processor:
                 for row in reading_rows(items)
             )
 
-        if Path(path).suffix.lower() == ".pdf":
-            with fitz.open(path) as doc:
-                if doc.needs_pass:
-                    raise ValueError("PDF已加密，请先解密再导入。")
-                for n, p in enumerate(doc, 1):
+        try:
+            if pdf is not None:
+                for n, p in enumerate(pdf, 1):
                     if cancelled():
                         raise Cancelled()
                     scale = min(2.5, 2600 / max(p.rect.width, p.rect.height))
@@ -125,11 +135,14 @@ class Processor:
                     page(
                         Image.frombytes("RGB", (pix.width, pix.height), pix.samples), n
                     )
-        else:
-            with Image.open(path) as image:
-                for n in range(getattr(image, "n_frames", 1)):
-                    image.seek(n)
-                    page(ImageOps.exif_transpose(image.copy()), n + 1)
+            else:
+                with Image.open(path) as image:
+                    for n in range(getattr(image, "n_frames", 1)):
+                        image.seek(n)
+                        page(ImageOps.exif_transpose(image.copy()), n + 1)
+        finally:
+            if pdf is not None:
+                pdf.close()
         if cancelled():
             raise Cancelled()
         text = "\n\n".join(texts)

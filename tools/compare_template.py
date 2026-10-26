@@ -47,6 +47,48 @@ def _strip_data_rows(xml):
     return ROW_RE.sub(keep, xml)
 
 
+def _color_key(color):
+    if color is None:
+        return None
+    return (color.type, color.theme, color.tint, getattr(color, "rgb", None))
+
+
+def _font_key(font):
+    return (
+        font.name,
+        font.size,
+        font.bold,
+        font.italic,
+        font.underline,
+        _color_key(font.color),
+    )
+
+
+def _side_key(side):
+    if side is None:
+        return None
+    return (side.style, _color_key(side.color))
+
+
+def _border_key(border):
+    return tuple(
+        _side_key(getattr(border, name)) for name in ("left", "right", "top", "bottom")
+    )
+
+
+def _same_header_style(source, result, kind):
+    key = _font_key if kind == "font" else _border_key
+    attr = "font" if kind == "font" else "border"
+    for left, right in zip(source.worksheets, result.worksheets):
+        width = max(left.max_column or 1, right.max_column or 1)
+        for column in range(1, width + 1):
+            if key(getattr(left.cell(1, column), attr)) != key(
+                getattr(right.cell(1, column), attr)
+            ):
+                return False, left.title
+    return True, ""
+
+
 def compare_workbooks(template, output, data_sheet=DATA_SHEET):
     """Return (ok, lines). Each line is a Chinese pass or fail."""
     template = Path(template)
@@ -94,7 +136,25 @@ def compare_workbooks(template, output, data_sheet=DATA_SHEET):
             header_ok = False
             header_detail = left.title
             break
-    ok &= check(header_ok, "表头文字一致", "表头文字不一致：" + header_detail)
+    ok &= check(
+        header_ok,
+        "列名、顺序和表头文字一致",
+        "列名、顺序或表头文字不一致：" + header_detail,
+    )
+    font_ok, font_detail = _same_header_style(source, result, "font")
+    ok &= check(font_ok, "表头字体一致", "表头字体不一致：" + font_detail)
+    border_ok, border_detail = _same_header_style(source, result, "border")
+    ok &= check(border_ok, "表头边框一致", "表头边框不一致：" + border_detail)
+    merge_ok = True
+    merge_detail = ""
+    for left, right in zip(source.worksheets, result.worksheets):
+        left_merges = sorted(str(item) for item in left.merged_cells.ranges)
+        right_merges = sorted(str(item) for item in right.merged_cells.ranges)
+        if left_merges != right_merges:
+            merge_ok = False
+            merge_detail = left.title
+            break
+    ok &= check(merge_ok, "合并单元格一致", "合并单元格不一致：" + merge_detail)
     width_ok = True
     width_detail = ""
     for left, right in zip(source.worksheets, result.worksheets):

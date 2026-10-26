@@ -155,7 +155,7 @@ def fake_units():
 
 def _write_template(path):
     from openpyxl import Workbook
-    from openpyxl.styles import Font
+    from openpyxl.styles import Border, Font, Side
     from openpyxl.utils import get_column_letter
     from openpyxl.workbook.defined_name import DefinedName
     from openpyxl.worksheet.datavalidation import DataValidation
@@ -220,9 +220,16 @@ def _write_template(path):
 
     def add_catalog(ws, headers):
         header_font = Font(name="Calibri", bold=True, size=11)
+        header_border = Border(
+            left=Side(style="thin", color="FF000000"),
+            right=Side(style="thin", color="FF000000"),
+            top=Side(style="thin", color="FF000000"),
+            bottom=Side(style="thin", color="FF000000"),
+        )
         for col, header in enumerate(headers, 1):
             cell = ws.cell(1, col, header)
             cell.font = header_font
+            cell.border = header_border
             letter = get_column_letter(col)
             ws.column_dimensions[letter].width = 18
             lock = DataValidation(
@@ -274,6 +281,8 @@ def _write_template(path):
         sheet = wb.create_sheet(title)
         for index, value in enumerate(samples, 1):
             sheet.cell(index, 1, value)
+        if title == "全宗号":
+            sheet.merge_cells("A1:B1")
     wb.save(path)
 
 

@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -69,6 +70,48 @@ class Tests(unittest.TestCase):
         request = opener.open.call_args.args[0]
         self.assertEqual(request.full_url, "http://127.0.0.1:11434/api/chat")
         self.assertEqual(extract("文号：甲号\n文号：乙号", ["文号"], 2)["文号"], "")
+
+    def test_unreadable_encrypted_and_empty_pdf_fail_once(self):
+        import fitz
+
+        processor = Processor()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            corrupt = tmp / "损坏.pdf"
+            corrupt.write_bytes(b"this is not a pdf")
+            encrypted = tmp / "加密.pdf"
+            document = fitz.open()
+            document.new_page()
+            document.save(
+                encrypted,
+                encryption=fitz.PDF_ENCRYPT_AES_256,
+                owner_pw="owner-secret",
+                user_pw="user-secret",
+            )
+            document.close()
+            with self.assertRaises(ValueError) as corrupt_error:
+                processor.recognize(corrupt, ["文件名称"])
+            self.assertIn("PDF无法读取", str(corrupt_error.exception))
+            empty = tmp / "空白.pdf"
+            empty.write_bytes(b"%PDF-1.4")
+
+            class EmptyPdf:
+                needs_pass = False
+                page_count = 0
+
+                def close(self):
+                    self.closed = True
+
+            blank = EmptyPdf()
+            with patch("fitz.open", return_value=blank):
+                with self.assertRaises(ValueError) as empty_error:
+                    processor.recognize(empty, ["文件名称"])
+            self.assertIn("没有页面", str(empty_error.exception))
+            self.assertTrue(blank.closed)
+            with self.assertRaises(ValueError) as encrypted_error:
+                processor.recognize(encrypted, ["文件名称"])
+            self.assertIn("PDF已加密", str(encrypted_error.exception))
+            self.assertIsNone(processor.engine)
 
     def test_cancel(self):
         with self.assertRaises(Cancelled):

@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
@@ -32,7 +33,12 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QCheckBox,
 )
-from batch_export import describe_batch, export_mapped_separate, write_summary
+from batch_export import (
+    describe_batch,
+    export_mapped_separate,
+    write_manifest,
+    write_summary,
+)
 from catalog_defaults import (
     DEFAULTS,
     DEFAULT_SHEET,
@@ -119,16 +125,22 @@ class Worker(QThread):
 
     def run(self):
         processor = Processor()
-        for index, path in self.jobs:
+        total = len(self.jobs)
+        for nth, (index, path) in enumerate(self.jobs, 1):
             if self.isInterruptionRequested():
                 break
+            prefix = f"正在识别 第{nth}个/共{total}个 · {Path(path).name}"
             try:
-                self.message.emit("正在处理 · " + Path(path).name)
+                self.message.emit(prefix)
+
+                def report(message, prefix=prefix):
+                    self.message.emit(prefix + " · " + message)
+
                 result = processor.recognize(
                     path,
                     self.fields,
                     self.isInterruptionRequested,
-                    self.message.emit,
+                    report,
                     self.model,
                 )
             except Cancelled:
@@ -150,27 +162,42 @@ class ExportWorker(QThread):
     item = Signal(int, object)
     message = Signal(str)
 
-    def __init__(self, jobs, folder, template, sheet, defaults=None):
+    def __init__(self, jobs, folder, template, sheet, defaults=None, overwrite=False):
         super().__init__()
         self.jobs = jobs
         self.folder = folder
         self.template = template
         self.sheet = sheet
         self.defaults = defaults
+        self.overwrite = overwrite
         self.results = []
 
     def run(self):
-        for index, record in self.jobs:
+        total = len(self.jobs)
+        taken = set()
+        for nth, (index, record) in enumerate(self.jobs, 1):
             if self.isInterruptionRequested():
                 break
-            self.message.emit("正在导出 · " + Path(record["path"]).name)
-            result = export_mapped_separate(
-                [record],
-                self.folder,
-                self.template,
-                self.sheet,
-                defaults=self.defaults,
-            )[0]
+            self.message.emit(
+                f"正在导出 第{nth}个/共{total}个 · {Path(record['path']).name}"
+            )
+            try:
+                result = export_mapped_separate(
+                    [record],
+                    self.folder,
+                    self.template,
+                    self.sheet,
+                    defaults=self.defaults,
+                    overwrite=self.overwrite,
+                    taken=taken,
+                )[0]
+            except Exception as error:
+                result = {
+                    "source": record.get("path", ""),
+                    "output": "",
+                    "excel_name": "",
+                    "error": str(error),
+                }
             self.results.append(result)
             self.item.emit(index, result)
 
@@ -181,7 +208,48 @@ def template_unavailable_message(path, reason):
         detail = f"找不到已保存的导出模板：{shown}"
     else:
         detail = f"导出模板无法读取（文件已损坏或不是有效的 Excel）：{shown}"
-    return detail + "。已改为自定义核对模式。请在「字段与模型设置」中重新选择模板。"
+    return detail + "。导出已停用。请在「字段与模型设置」中重新选择模板。"
+
+
+def confirm_unreviewed(parent, count):
+    """Ask before exporting files that have not been marked 已核对. True means continue."""
+    box = QMessageBox(parent)
+    box.setWindowTitle("尚有未核对文件")
+    box.setText(f"有 {count} 份尚未核对。")
+    box.setInformativeText("可以继续导出，也可以返回先核对。")
+    go = box.addButton("继续导出", QMessageBox.YesRole)
+    box.addButton("返回", QMessageBox.NoRole)
+    box.exec()
+    return box.clickedButton() is go
+
+
+def open_output_folder(path):
+    folder = str(path)
+    if sys.platform == "win32":
+        os.startfile(folder)
+        return
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    subprocess.Popen([opener, folder])
+
+
+def show_export_result(parent, summary, folder, can_retry):
+    """Show the batch result. Return open, retry, or close."""
+    box = QMessageBox(parent)
+    box.setWindowTitle("批量导出结果")
+    box.setText(summary)
+    open_button = box.addButton("打开输出文件夹", QMessageBox.ActionRole)
+    retry_button = None
+    if can_retry:
+        retry_button = box.addButton("重试失败文件", QMessageBox.ActionRole)
+    box.addButton("关闭", QMessageBox.AcceptRole)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is open_button:
+        open_output_folder(folder)
+        return "open"
+    if retry_button is not None and clicked is retry_button:
+        return "retry"
+    return "close"
 
 
 class Window(QMainWindow):
@@ -214,6 +282,10 @@ class Window(QMainWindow):
         self.use_template = False
         self.choices = {}
         self.catalog_defaults = effective_defaults(None)
+        self.export_folder = ""
+        self.overwrite_same_name = False
+        self._export_after_ocr = False
+        self._export_indexes = None
         self.template_notice = None
         self.defaults_notice = None
         self._template_notice_shown = False
@@ -228,6 +300,8 @@ class Window(QMainWindow):
             saved_template = state.get("template_path", self.template_path)
             self.template_sheet = state.get("template_sheet") or DEFAULT_SHEET
             self.catalog_defaults = effective_defaults(state.get("catalog_defaults"))
+            self.export_folder = state.get("export_folder") or ""
+            self.overwrite_same_name = bool(state.get("overwrite_same_name", False))
             self._try_saved_template(saved_template)
         except (OSError, ValueError, KeyError):
             pass
@@ -295,8 +369,15 @@ class Window(QMainWindow):
         actions.addStretch()
         self.delete_btn = button("移除", self.remove)
         actions.addWidget(self.delete_btn)
-        actions.addWidget(button("导出 Excel", self.export, True))
-        actions.addWidget(button("汇总导出（可选）", self.export_summary))
+        self.export_btn = button("导出 Excel", self.export, True)
+        actions.addWidget(self.export_btn)
+        self.summary_btn = button("汇总导出（可选）", self.export_summary)
+        actions.addWidget(self.summary_btn)
+        self.overwrite_box = QCheckBox("覆盖同名文件")
+        self.overwrite_box.setChecked(self.overwrite_same_name)
+        self.overwrite_box.toggled.connect(self._set_overwrite)
+        actions.addWidget(self.overwrite_box)
+        self._apply_export_enabled()
         actions.addWidget(button("核对记录", lambda: self.export(True)))
         content.addLayout(actions)
         self.table = QTableWidget(0, 4)
@@ -376,13 +457,9 @@ class Window(QMainWindow):
         self.progress.hide()
         content.addWidget(self.progress)
         ready = (
-            "就绪 · "
-            + (
-                "标准模板：" + self.template_sheet
-                if self.use_template
-                else "自定义核对工作簿"
-            )
-            + " · 所有材料保留在本机"
+            "就绪 · 标准模板：" + self.template_sheet + " · 所有材料保留在本机"
+            if self.use_template
+            else (self.template_notice or "导出已停用。请重新选择标准模板。")
         )
         self.status = label(
             self.template_notice or self.defaults_notice or ready, "subtitle"
@@ -467,6 +544,8 @@ class Window(QMainWindow):
                         "template_path": self.template_path,
                         "template_sheet": self.template_sheet,
                         "catalog_defaults": self.catalog_defaults,
+                        "export_folder": self.export_folder,
+                        "overwrite_same_name": self.overwrite_same_name,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -662,6 +741,22 @@ class Window(QMainWindow):
         self.unit_check.setEnabled(not enabled)
         self.stop_btn.setEnabled(enabled)
         self.progress.setVisible(enabled)
+        self.progress.setFormat("第%v个/共%m个")
+        self._apply_export_enabled(enabled)
+
+    def _apply_export_enabled(self, busy=False):
+        allowed = self.use_template and not busy
+        if hasattr(self, "export_btn"):
+            self.export_btn.setEnabled(allowed)
+            self.summary_btn.setEnabled(allowed)
+            tip = "" if allowed or busy else (self.template_notice or "导出已停用。")
+            self.export_btn.setToolTip(tip)
+            self.summary_btn.setToolTip(tip)
+
+    def _set_overwrite(self, checked):
+        self.overwrite_same_name = bool(checked)
+        self.dirty = True
+        self.save()
 
     def reprocess(self):
         if self.busy() or not 0 <= self.current < len(self.records):
@@ -731,6 +826,10 @@ class Window(QMainWindow):
         self.status.setText("本轮处理结束 · 请核对字段后导出 Excel")
         self.load_record()
         self.save()
+        if self._export_after_ocr:
+            self._export_after_ocr = False
+            indexes = self._export_indexes or []
+            self.export(only_indexes=indexes, confirm=False)
 
     def stop(self):
         if self.busy():
@@ -796,66 +895,54 @@ class Window(QMainWindow):
         if self.records:
             self.table.selectRow(0)
 
-    def export(self, report=False):
+    def export(self, report=False, only_indexes=None, confirm=True):
         if self.busy():
             QMessageBox.information(self, "任务进行中", "请等待当前识别或导出完成。")
             return
-        records = [
-            r
-            for r in self.records
-            if r.get("text") and r["status"] not in ("处理失败", "待识别")
-        ]
-        if not self.records:
-            QMessageBox.information(
-                self, "暂无可导出结果", "请先导入并完成至少一份文件的识别。"
-            )
+        if report:
+            self._export_json()
             return
-        if not report and not records:
-            QMessageBox.information(
+        if not self.use_template:
+            QMessageBox.warning(
                 self,
-                "批量导出结果",
-                describe_batch(self.records, []),
+                "导出已停用",
+                self.template_notice or "没有可读的标准模板。导出已停用。",
             )
             return
-        if not report:
-            if not self.use_template:
-                QMessageBox.warning(
-                    self,
-                    "需要原模板",
-                    "请在设置中选择原标准模板；标准导出不使用自定义工作簿。",
-                )
-                return
-            folder = QFileDialog.getExistingDirectory(
-                self, "选择输出文件夹：每个 PDF 导出一个同名 Excel"
-            )
-            if not folder:
-                return
-            import copy
+        if only_indexes is None:
+            indexes = list(range(len(self.records)))
+        else:
+            indexes = [
+                index for index in only_indexes if 0 <= index < len(self.records)
+            ]
+        if not indexes:
+            QMessageBox.information(self, "暂无可导出结果", "请先导入文件。")
+            return
+        pending = sum(
+            self.records[index].get("status") == "待核对" for index in indexes
+        )
+        if confirm and pending and not confirm_unreviewed(self, pending):
+            return
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "选择输出文件夹：每个 PDF 导出一个同名 Excel",
+            self.export_folder or "",
+        )
+        if not folder:
+            return
+        self.export_folder = folder
+        self._start_export(indexes)
 
-            jobs = []
-            for index, record in enumerate(self.records):
-                if record.get("text") and record["status"] not in (
-                    "处理失败",
-                    "待识别",
-                ):
-                    item = copy.deepcopy(record)
-                    item["export_order"] = index + 1
-                    jobs.append((index, item))
-            self.export_worker = ExportWorker(
-                jobs,
-                folder,
-                self.template_path,
-                self.template_sheet,
-                self.catalog_defaults,
+    def _export_json(self):
+        records = [
+            record
+            for record in self.records
+            if record.get("text") and record["status"] not in ("处理失败", "待识别")
+        ]
+        if not records:
+            QMessageBox.information(
+                self, "暂无可导出结果", "请先完成至少一份文件的识别。"
             )
-            self.export_worker.item.connect(self.export_received)
-            self.export_worker.message.connect(self.status.setText)
-            self.export_worker.finished.connect(self.export_finished)
-            self.progress.setRange(0, len(jobs))
-            self.progress.setValue(0)
-            self.set_busy(True)
-            self.export_worker.start()
-            self.refresh()
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "导出核对记录", "档案核对记录.json", "JSON (*.json)"
@@ -875,6 +962,62 @@ class Window(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "保存失败", str(e))
 
+    def _start_export(self, indexes):
+        import copy
+
+        jobs = []
+        for index in indexes:
+            item = copy.deepcopy(self.records[index])
+            item["export_order"] = index + 1
+            item["export_error"] = ""
+            jobs.append((index, item))
+        self._export_indexes = list(indexes)
+        self.export_worker = ExportWorker(
+            jobs,
+            self.export_folder,
+            self.template_path,
+            self.template_sheet,
+            self.catalog_defaults,
+            self.overwrite_same_name,
+        )
+        self.export_worker.item.connect(self.export_received)
+        self.export_worker.message.connect(self.status.setText)
+        self.export_worker.finished.connect(self.export_finished)
+        self.progress.setRange(0, len(jobs))
+        self.progress.setValue(0)
+        self.dirty = True
+        self.set_busy(True)
+        self.export_worker.start()
+        self.refresh()
+
+    def retry_failed(self):
+        indexes = [
+            index
+            for index, record in enumerate(self.records)
+            if record.get("export_error")
+            or record.get("status") in ("处理失败", "待识别")
+        ]
+        if not indexes:
+            QMessageBox.information(self, "没有失败文件", "当前没有需要重试的文件。")
+            return
+        if not self.export_folder:
+            self.export(only_indexes=indexes, confirm=False)
+            return
+        need_ocr = [
+            index
+            for index in indexes
+            if self.records[index].get("status") in ("处理失败", "待识别")
+            or not self.records[index].get("text")
+        ]
+        self._export_indexes = indexes
+        if need_ocr:
+            self._export_after_ocr = True
+            self.launch_jobs(
+                [(index, self.records[index]["path"]) for index in need_ocr]
+            )
+            return
+        self._start_export(indexes)
+
     def export_received(self, index, result):
         self.records[index]["export_path"] = result["output"]
         self.records[index]["export_error"] = result["error"]
@@ -884,13 +1027,30 @@ class Window(QMainWindow):
     def export_finished(self):
         self.set_busy(False)
         self.refresh()
-        self.save()
         stopped = self.export_worker.isInterruptionRequested()
-        text = describe_batch(self.records, self.export_worker.results, stopped=stopped)
-        self.status.setText(text.splitlines()[0])
+        indexes = [
+            index for index in (self._export_indexes or []) if index < len(self.records)
+        ]
+        batch = [self.records[index] for index in indexes]
         if stopped:
-            text = "已停止，未处理文件可再次导出。\n" + text
-        QMessageBox.information(self, "批量导出结果", text)
+            text = "已停止，未处理文件可再次导出。\n" + describe_batch(
+                batch, self.export_worker.results, stopped=True
+            )
+        else:
+            text = describe_batch(batch, self.export_worker.results, stopped=False)
+        try:
+            write_manifest(
+                self.export_folder, batch, self.export_worker.results, stopped=stopped
+            )
+        except OSError as error:
+            text += "\n处理清单未能写入：" + str(error)
+        self.status.setText(text.splitlines()[0])
+        self.save()
+        can_retry = any(record.get("export_error") for record in batch) or any(
+            record.get("status") in ("处理失败", "待识别") for record in batch
+        )
+        if show_export_result(self, text, self.export_folder, can_retry) == "retry":
+            self.retry_failed()
 
     def export_summary(self):
         import copy
@@ -912,8 +1072,8 @@ class Window(QMainWindow):
         if not self.use_template:
             QMessageBox.warning(
                 self,
-                "需要原模板",
-                "请在设置中选择原标准模板；标准导出不使用自定义工作簿。",
+                "导出已停用",
+                self.template_notice or "没有可读的标准模板。导出已停用。",
             )
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -954,8 +1114,8 @@ class Window(QMainWindow):
         layout = QVBoxLayout(dlg)
         layout.addWidget(label("导出格式", "section"))
         mode = QComboBox()
-        mode.addItems(["原标准模板（保留工作表、表头和下拉字典）", "自定义核对工作簿"])
-        mode.setCurrentIndex(0 if self.use_template else 1)
+        mode.addItems(["标准模板（保留工作表、表头和下拉字典）"])
+        mode.setEnabled(False)
         layout.addWidget(mode)
         path_edit = QLineEdit(self.template_path)
         path_edit.setReadOnly(True)
@@ -1047,8 +1207,12 @@ class Window(QMainWindow):
         mode.currentIndexChanged.connect(sync_fields)
         try:
             load_template(self.template_path, self.template_sheet or DEFAULT_SHEET)
-        except Exception:
-            mode.setCurrentIndex(1)
+        except Exception as error:
+            QMessageBox.warning(
+                dlg,
+                "模板读取失败",
+                str(error) + "\n导出已停用，直到选择可读的标准模板。",
+            )
             sync_fields()
         layout.addWidget(label("可选：本机 Ollama 模型", "section"))
         model = QLineEdit(self.model)
@@ -1154,14 +1318,12 @@ class Window(QMainWindow):
             self.status.setText(
                 self.defaults_notice
                 or (
-                    "就绪 · "
-                    + (
-                        "标准模板：" + self.template_sheet
-                        if self.use_template
-                        else "自定义核对工作簿"
-                    )
+                    "就绪 · 标准模板：" + self.template_sheet
+                    if self.use_template
+                    else (self.template_notice or "导出已停用。请重新选择标准模板。")
                 )
             )
+        self._apply_export_enabled()
         self.dirty = True
         self.load_record()
         self.save()
@@ -1178,6 +1340,7 @@ class Window(QMainWindow):
     def _try_builtin_template(self, builtin):
         if not builtin.exists():
             self.use_template = False
+            self.template_notice = template_unavailable_message(str(builtin), "missing")
             return
         try:
             meta = inspect_template(self.template_path, self.template_sheet)
@@ -1192,11 +1355,9 @@ class Window(QMainWindow):
         self.template_notice = None
 
     def _try_saved_template(self, saved_template):
-        if not self.use_template:
-            self.choices = {}
-            self.template_notice = None
+        if not saved_template:
             return
-        if not saved_template or not Path(saved_template).exists():
+        if not Path(saved_template).exists():
             shown = saved_template or self.template_path
             self.template_path = str(shown)
             self._fallback_from_template(template_unavailable_message(shown, "missing"))
