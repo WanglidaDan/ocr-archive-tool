@@ -77,6 +77,8 @@ def _pdf(path, images):
 
 
 def write_pdfs(folder):
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
     font = ImageFont.truetype(str(cjk_font_path()), 72)
     paths = []
     for number, count in enumerate([1, 2, 3, 4, 5, 1, 2, 3, 4, 5], 1):

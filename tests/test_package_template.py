@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 from app import Window
 from fixtures import example_template
 from tools.inject_template import inject, main as inject_main
+from tools.smoke_batch import write_pdfs
 from tools.stage_windows_dist import archive_names, make_zip, prepare_dist
 
 
@@ -63,6 +64,12 @@ class PackageTemplateTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 names = archive.namelist()
             self.assertIn("ArchiveDesk/templates/standard_template.xlsx", names)
+
+    def test_smoke_pdfs_are_written_into_a_new_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = write_pdfs(Path(tmp) / "pdfs")
+            self.assertEqual(len(paths), 10)
+            self.assertTrue(all(path.is_file() for path in paths))
 
     def test_template_beside_the_program_wins_over_a_saved_path(self):
         with tempfile.TemporaryDirectory() as tmp:
