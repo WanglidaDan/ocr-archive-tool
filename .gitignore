@@ -5,6 +5,13 @@ __pycache__/
 *.pyc
 *.xlsx
 *.pdf
+!eval/corpus/*.pdf
 project.json
 *.log
 startup-error.txt
+# Evaluation artifacts that must stay out of the repo: model weights and any
+# local LLM endpoint config (it can hold an API key).
+eval/models/
+eval/cache/
+eval/llm.local.json
+.env
