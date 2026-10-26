@@ -54,9 +54,9 @@ class UITests(unittest.TestCase):
             self.app.processEvents()
             # A failed recognize() stores values as {}. Indexing 责任单位 then
             # raises KeyError instead of showing the recognition error.
-            self.assertEqual(
+            self.assertIn(
                 window.records[0]["status"],
-                "待核对",
+                ("已识别", "待核对"),
                 window.records[0].get("warning"),
             )
             self.assertEqual(window.records[0]["values"]["责任单位"], "档案馆")
@@ -114,6 +114,12 @@ class UITests(unittest.TestCase):
             self.assertFalse(window.use_template)
             self.assertIn("无法读取", window.template_notice)
             self.assertIn("重新选择", window.template_notice)
+            self.assertIn("导出已停用", window.template_notice)
+            self.assertFalse(window.export_btn.isEnabled())
+            self.assertFalse(window.summary_btn.isEnabled())
+            self.assertFalse(window.template_banner.isHidden())
+            self.assertIn("无法读取", window.template_banner.text())
+            self.assertNotIn("自定义", window.template_notice)
             window.close()
 
     def test_corrupt_builtin_template_still_starts(self):
@@ -129,6 +135,11 @@ class UITests(unittest.TestCase):
                 self.assertFalse(window.use_template)
                 self.assertIn("无法读取", window.template_notice)
                 self.assertIn("重新选择", window.template_notice)
+                self.assertIn("导出已停用", window.template_notice)
+                self.assertFalse(window.export_btn.isEnabled())
+                self.assertFalse(window.template_banner.isHidden())
+                self.assertNotIn("自定义", window.template_notice)
+                self.assertNotIn("自定义", window.status.text())
                 window.close()
         finally:
             if previous is None:
@@ -176,6 +187,11 @@ class UITests(unittest.TestCase):
             self.assertIn("导出已停用", window.export_btn.toolTip())
             self.assertFalse(window.template_banner.isHidden())
             self.assertIn("找不到", window.template_banner.text())
+            self.assertEqual(window.template_banner.objectName(), "banner")
+            self.assertIn("QLabel#banner {background:#c0392b", STYLE)
+            self.assertNotIn("#f4e4c4", STYLE)
+            self.assertNotIn("自定义", window.template_notice)
+            self.assertNotIn("自定义", window.status.text())
             self.assertEqual(window.retry_btn.text(), "只重试失败项")
             window.close()
 
@@ -368,10 +384,10 @@ class UITests(unittest.TestCase):
             self.app.processEvents()
             self.assertFalse(worker.isRunning())
             self.assertEqual(set(found), {0, 1})
-            self.assertEqual(found[0]["status"], "处理失败")
+            self.assertEqual(found[0]["status"], "失败")
             self.assertIn("文件已损坏", found[0]["warning"])
             self.assertNotIn("FileData", found[0]["warning"])
-            self.assertEqual(found[1]["status"], "处理失败")
+            self.assertEqual(found[1]["status"], "失败")
             self.assertIn("PDF已加密", found[1]["warning"])
 
     def test_recognition_progress_can_be_stopped(self):
@@ -418,8 +434,9 @@ class UITests(unittest.TestCase):
             self._wait_idle(window, 10)
             self.assertEqual(
                 [record["status"] for record in window.records],
-                ["待识别", "待识别"],
+                ["已停止，可重新识别", "待识别"],
             )
+            self.assertIn("已停止", window.status.text())
             window.close()
 
     def test_unreviewed_dialog_counts_files_and_can_go_back(self):
@@ -443,6 +460,21 @@ class UITests(unittest.TestCase):
                     "path": str(tmp / "丙.pdf"),
                     "status": "已核对",
                     "text": "丙",
+                    "values": {},
+                },
+                {
+                    "path": str(tmp / "丁.pdf"),
+                    "status": "已识别",
+                    "text": "丁",
+                    "values": {"责任者": "示例单位A"},
+                    "export_status": "失败",
+                    "export_error": "磁盘空间不足",
+                },
+                {
+                    "path": str(tmp / "戊.pdf"),
+                    "status": "失败",
+                    "text": "",
+                    "warning": "文件已损坏",
                     "values": {},
                 },
             ]
@@ -774,6 +806,227 @@ class UITests(unittest.TestCase):
             window.close()
             restored = Window(state)
             self.assertEqual(restored.file_size_unit, "MB")
+            restored.close()
+
+    def test_stop_keeps_completed_recognition(self):
+        from core import Cancelled
+
+        def recognize(
+            self,
+            path,
+            fields,
+            cancelled=lambda: False,
+            progress=lambda message: None,
+            model="",
+        ):
+            progress("正在识别第 1 页")
+            if Path(path).name.startswith("甲"):
+                values = {
+                    "文件名称": "关于启用的通知",
+                    "文号": "档发〔2026〕12号",
+                    "日期": "2026-10-26",
+                    "责任单位": "示例单位A",
+                    "页数": "1",
+                    "备注": "",
+                }
+                evidence = {
+                    field: {
+                        "candidates": [
+                            {
+                                "value": values[field],
+                                "confidence": None if field == "页数" else 0.96,
+                                "issue": "",
+                            }
+                        ]
+                    }
+                    for field in values
+                }
+                return {
+                    "text": "原文",
+                    "values": values,
+                    "evidence": evidence,
+                    "pages": 1,
+                    "confidence": 0.96,
+                    "warning": "",
+                    "ocr_rows": [],
+                    "engine_version": "0.3",
+                }
+            while not cancelled():
+                time.sleep(0.01)
+            raise Cancelled()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("core.Processor.recognize", recognize),
+        ):
+            tmp = Path(tmp)
+            first = tmp / "甲.pdf"
+            second = tmp / "乙.pdf"
+            first.write_bytes(b"a")
+            second.write_bytes(b"b")
+            window = Window(tmp / "project.json")
+            window.template_notice = None
+            window.use_template = False
+            window.choices = {}
+            window.fields = ["文件名称", "文号", "日期", "责任单位", "页数", "备注"]
+            window.add_paths([str(first), str(second)])
+            window.start()
+            deadline = time.monotonic() + 5
+            while (
+                "第2个/共2个" not in window.status.text()
+                and time.monotonic() < deadline
+            ):
+                self.app.processEvents()
+                time.sleep(0.01)
+            self.assertIn("正在识别 第2个/共2个", window.status.text())
+            self.assertEqual(window.records[0]["status"], "已识别")
+            self.assertEqual(window.records[0]["values"]["责任单位"], "示例单位A")
+            window.stop()
+            self._wait_idle(window, 10)
+            self.assertEqual(window.records[0]["status"], "已识别")
+            self.assertEqual(window.records[0]["values"]["文件名称"], "关于启用的通知")
+            self.assertEqual(window.records[1]["status"], "已停止，可重新识别")
+            self.assertEqual(window.records[1].get("values") or {}, {})
+            window.close()
+
+    def test_import_lists_each_skipped_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            window = Window(tmp / "project.json")
+            window.template_notice = None
+            folder = tmp / "inbox"
+            nested = folder / "子目录"
+            nested.mkdir(parents=True)
+            scan = folder / "scan.pdf"
+            scan.write_bytes(Path(example_scan()).read_bytes())
+            (folder / "说明.txt").write_text("notes", encoding="utf-8")
+            (nested / "表格.docx").write_text("x", encoding="utf-8")
+            window.add_paths([str(scan)])
+
+            def checks(box):
+                self.assertEqual(box.windowTitle(), "部分文件未导入")
+                body = box.text() + "\n" + box.informativeText()
+                self.assertIn("已跳过 3 个文件。", body)
+                self.assertIn("scan.pdf", body)
+                self.assertIn("文件已在列表中", body)
+                self.assertIn("说明.txt", body)
+                self.assertIn("表格.docx", body)
+                self.assertIn("不支持的文件格式", body)
+
+            self._click_dialog("关闭", checks)
+            with patch(
+                "app.QFileDialog.getExistingDirectory", return_value=str(folder)
+            ):
+                window.import_folder()
+            self.assertEqual(
+                [Path(record["path"]).name for record in window.records], ["scan.pdf"]
+            )
+            fresh = tmp / "新文件.pdf"
+            fresh.write_bytes(b"%PDF")
+            with patch("app.show_skipped_files") as skipped:
+                window.add_paths([str(fresh)], report=True)
+            skipped.assert_not_called()
+            self.assertEqual(len(window.records), 2)
+            note = tmp / "备注.md"
+            note.write_text("no", encoding="utf-8")
+
+            def file_checks(box):
+                body = box.text() + "\n" + box.informativeText()
+                self.assertIn("已跳过 2 个文件。", body)
+                self.assertIn("scan.pdf", body)
+                self.assertIn("文件已在列表中", body)
+                self.assertIn("备注.md", body)
+                self.assertIn("不支持的文件格式", body)
+
+            self._click_dialog("关闭", file_checks)
+            with patch(
+                "app.QFileDialog.getOpenFileNames",
+                return_value=([str(scan), str(note)], ""),
+            ):
+                window.import_files()
+            self.assertEqual(len(window.records), 2)
+            window.close()
+
+    def test_settings_has_no_custom_review_mode(self):
+        from PySide6.QtWidgets import QDialog, QLabel
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            bad = tmp / "bad.xlsx"
+            bad.write_bytes(b"not-a-workbook")
+            state = self._write_state(
+                tmp / "project.json",
+                use_template=True,
+                template_path=str(bad),
+                template_sheet="管理类_件",
+            )
+            window = Window(state)
+            seen = {}
+
+            def grab(dialog):
+                texts = []
+                for combo in dialog.findChildren(QComboBox):
+                    texts.extend(combo.itemText(i) for i in range(combo.count()))
+                texts.extend(widget.text() for widget in dialog.findChildren(QLabel))
+                seen["texts"] = texts
+                return QDialog.Rejected
+
+            with (
+                patch("app.QMessageBox.warning"),
+                patch("app.QDialog.exec", grab),
+            ):
+                window.settings()
+            joined = "\n".join(seen["texts"])
+            self.assertNotIn("自定义", joined)
+            self.assertNotIn("自定义核对", window.template_notice)
+            self.assertFalse(window.export_btn.isEnabled())
+            self.assertFalse(window.template_banner.isHidden())
+            window.close()
+
+    def test_last_output_folder_is_restored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            remembered = tmp / "上次输出"
+            remembered.mkdir()
+            state = self._write_state(
+                tmp / "project.json",
+                use_template=True,
+                template_path=str(example_template()),
+                template_sheet="管理类_件",
+                export_folder=str(remembered),
+            )
+            window = Window(state)
+            self.assertEqual(window.export_folder, str(remembered))
+            window.records = [
+                {
+                    "path": str(tmp / "甲.pdf"),
+                    "status": "已核对",
+                    "text": "甲",
+                    "values": {},
+                }
+            ]
+            with patch(
+                "app.QFileDialog.getExistingDirectory", return_value=""
+            ) as choose:
+                window.export()
+            self.assertEqual(choose.call_args.args[2], str(remembered))
+            chosen = tmp / "新目录"
+            chosen.mkdir()
+
+            def block(_indexes):
+                saved = json.loads(state.read_text(encoding="utf-8"))
+                self.assertEqual(saved["export_folder"], str(chosen))
+                raise RuntimeError("stop before writing")
+
+            with (
+                patch("app.QFileDialog.getExistingDirectory", return_value=str(chosen)),
+                patch.object(window, "_start_export", block),
+            ):
+                with self.assertRaises(RuntimeError):
+                    window.export()
+            window.close()
+            restored = Window(state)
+            self.assertEqual(restored.export_folder, str(chosen))
             restored.close()
 
 

@@ -3,6 +3,7 @@
 import os, re, tempfile
 from pathlib import Path
 from errors import chinese_message
+from status_model import not_exportable, recognition_block_reason
 from template_io import export_template
 
 
@@ -94,8 +95,8 @@ def export_separate(
         try:
             if record.get("_map_error"):
                 raise ValueError(record["_map_error"])
-            if record.get("status") in ("待识别", "处理失败"):
-                raise ValueError(record.get("warning") or "文件尚未识别，未导出")
+            if not_exportable(record):
+                raise ValueError(recognition_block_reason(record))
             stem = excel_stem(record["path"])
             while True:
                 name = choose_excel_name(stem, folder, overwrite, taken)
@@ -159,18 +160,10 @@ def manifest_rows(records, results, stopped=False):
         item = produced.get(os.path.normcase(record.get("path", "")))
         source = record.get("path", "")
         if item is None:
-            if (
-                stopped
-                and record.get("text")
-                and record.get("status") not in ("待识别", "处理失败")
-            ):
+            if stopped and record.get("text") and not not_exportable(record):
                 reason = "已停止，未导出"
-            elif record.get("warning"):
-                reason = record["warning"]
-            elif record.get("status") == "处理失败":
-                reason = record.get("warning") or "识别失败，未导出"
             else:
-                reason = "尚未识别，未导出"
+                reason = recognition_block_reason(record)
             rows.append(_manifest_row(name, source, "", "失败", reason, ""))
             continue
         if item.get("error"):
@@ -212,6 +205,7 @@ def suggest_action(reason, success, note=""):
         ("权限", "请检查文件夹是否只读或没有写入权限"),
         ("占用", "请关闭正在使用该文件的程序后重试"),
         ("超出原模板", "请调整电子文件大小单位或核对字段"),
+        ("可重新识别", "请重新识别后再导出"),
         ("已停止", "可再次导出未完成的文件"),
         ("尚未识别", "请先完成识别"),
         ("识别失败", "请查看原因后重新识别"),
@@ -361,11 +355,8 @@ def write_summary(
 
     sheet = sheet or DEFAULT_SHEET
     for record in records:
-        if record.get("status") in ("待识别", "处理失败"):
-            raise ValueError(
-                record.get("warning")
-                or "文件尚未识别，未导出：" + str(record.get("path", ""))
-            )
+        if not_exportable(record):
+            raise ValueError(recognition_block_reason(record))
     prepared = _with_mapping(records, template, sheet, defaults, size_unit)
     failed = next(
         (item.get("_map_error") for item in prepared if item.get("_map_error")), ""

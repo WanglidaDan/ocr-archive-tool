@@ -145,7 +145,7 @@ class StrictBatchTests(unittest.TestCase):
                 [
                     {**records[0], "status": "待核对", "text": "x"},
                     {**records[1], "status": "已核对", "text": "y"},
-                    {"path": "miss.pdf", "status": "处理失败", "text": ""},
+                    {"path": "miss.pdf", "status": "失败", "text": ""},
                 ],
                 results,
             )
@@ -250,7 +250,7 @@ class StrictBatchTests(unittest.TestCase):
             {"path": "ok.pdf", "values": {"密级": "非涉密", "题名": "正常"}},
             {
                 "path": "miss.pdf",
-                "status": "处理失败",
+                "status": "失败",
                 "warning": "PDF已加密，请先解密再导入。",
                 "values": {},
             },
@@ -367,6 +367,23 @@ class StrictBatchTests(unittest.TestCase):
         self.assertIn("权限", results[0]["error"])
         self.assertNotIn("Errno", results[0]["error"])
         self.assertNotIn("Permission", results[0]["error"])
+
+    def test_stopped_recognition_keeps_its_reason(self):
+        rows = manifest_rows(
+            [
+                {
+                    "path": "/data/停.pdf",
+                    "status": "已停止，可重新识别",
+                    "warning": "已停止，可重新识别",
+                    "text": "",
+                }
+            ],
+            [],
+        )
+        self.assertEqual(rows[0]["结果"], "失败")
+        self.assertEqual(rows[0]["原因"], "已停止，可重新识别")
+        self.assertIn("重新识别", rows[0]["建议操作"])
+        self.assertNotIn("尚未识别成功", rows[0]["原因"])
 
 
 if __name__ == "__main__":

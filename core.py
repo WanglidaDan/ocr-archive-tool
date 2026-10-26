@@ -7,6 +7,7 @@ from pathlib import Path
 
 from errors import chinese_message
 from extraction import extract, extract_details, reading_rows
+from status_model import classify_recognition
 
 VERSION = "0.3"
 DEFAULT_FIELDS = ["文件名称", "文号", "日期", "责任单位", "页数", "备注"]
@@ -199,7 +200,9 @@ class Processor:
             "ocr_rows": rows,
             "engine_version": VERSION,
             "warning": "；".join(dict.fromkeys(warnings)),
-            "status": "待核对",
+            "status": classify_recognition(
+                fields, values, evidence, round(min(scores), 3)
+            ),
         }
 
 

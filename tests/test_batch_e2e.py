@@ -146,11 +146,14 @@ class BatchExportFlowTests(unittest.TestCase):
             self._wait(window, 300, seen)
             ocr_seconds = time.monotonic() - started
             self.app.processEvents()
-            self.assertEqual(
-                [record["status"] for record in window.records],
-                ["待核对"] * 10,
-                [record.get("warning") for record in window.records],
+            statuses = [record["status"] for record in window.records]
+            self.assertTrue(
+                all(status in ("已识别", "待核对") for status in statuses),
+                list(
+                    zip(statuses, [record.get("warning") for record in window.records])
+                ),
             )
+            pending = statuses.count("待核对")
             self.assertEqual(
                 [record["pages"] for record in window.records],
                 page_counts,
@@ -202,8 +205,11 @@ class BatchExportFlowTests(unittest.TestCase):
             export_seconds = time.monotonic() - export_started
             question.assert_not_called()
             warning.assert_not_called()
-            confirm.assert_called_once()
-            self.assertEqual(confirm.call_args.args[1], 10)
+            if pending:
+                confirm.assert_called_once()
+                self.assertEqual(confirm.call_args.args[1], pending)
+            else:
+                confirm.assert_not_called()
             self.assertEqual(choose.call_args.args[2], str(remembered))
             self.assertEqual(window.export_folder, str(output))
             self.assertEqual(len(summaries), 1)

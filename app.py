@@ -51,6 +51,13 @@ from unit_link import link_record
 from extraction import canonical, normalize_date, extract_details
 from template_io import inspect_template, export_template, standard_value
 from core import DEFAULT_FIELDS, SUPPORTED, Processor, Cancelled, VERSION
+from status_model import (
+    FAILED,
+    STOPPED,
+    classify_recognition,
+    needs_ocr,
+    not_exportable,
+)
 
 STYLE = """
 QWidget {font-family:"Microsoft YaHei UI","Noto Sans CJK SC","Arial";font-size:13px;color:#243b43;}
@@ -73,7 +80,7 @@ QTabBar::tab {padding:10px 20px;color:#7b8983;} QTabBar::tab:selected {color:#15
 QScrollArea {border:0;background:white;} QProgressBar {border:0;border-radius:3px;background:#dde8e3;height:6px;text-align:center;}
 QProgressBar::chunk {background:#248775;border-radius:3px;} QSplitter::handle {background:#e4eae6;width:7px;}
 QLabel#pill {background:#ddefe5;color:#22715b;border-radius:10px;padding:6px 12px;font-size:12px;}
-QLabel#banner {background:#f4e4c4;color:#6a4b12;border:1px solid #e2c98a;border-radius:8px;padding:10px 14px;font-weight:600;}
+QLabel#banner {background:#c0392b;color:#ffffff;border:1px solid #922b21;border-radius:8px;padding:10px 14px;font-weight:600;}
 """
 
 
@@ -125,12 +132,14 @@ class Worker(QThread):
         self.jobs = jobs
         self.fields = fields
         self.model = model
+        self.stopped = False
 
     def run(self):
         processor = Processor()
         total = len(self.jobs)
         for nth, (index, path) in enumerate(self.jobs, 1):
             if self.isInterruptionRequested():
+                self.stopped = True
                 break
             prefix = f"正在识别 第{nth}个/共{total}个 · {Path(path).name}"
             try:
@@ -147,10 +156,15 @@ class Worker(QThread):
                     self.model,
                 )
             except Cancelled:
+                self.stopped = True
+                self.result.emit(
+                    index,
+                    {"status": STOPPED, "warning": STOPPED},
+                )
                 break
             except Exception as error:
                 result = {
-                    "status": "处理失败",
+                    "status": FAILED,
                     "warning": chinese_message(error),
                     "text": "",
                     "values": {},
@@ -184,12 +198,14 @@ class ExportWorker(QThread):
         self.overwrite = overwrite
         self.size_unit = size_unit
         self.results = []
+        self.stopped = False
 
     def run(self):
         total = len(self.jobs)
         taken = set()
         for nth, (index, record) in enumerate(self.jobs, 1):
             if self.isInterruptionRequested():
+                self.stopped = True
                 break
             try:
                 self.message.emit(
@@ -238,7 +254,7 @@ def template_unavailable_message(path, reason):
 
 
 def confirm_unreviewed(parent, count):
-    """Ask before exporting files that have not been marked 已核对. True means continue."""
+    """Ask before exporting 待核对 files. The count excludes 已识别 and 已核对."""
     box = QMessageBox(parent)
     box.setWindowTitle("尚有未核对文件")
     box.setText(f"有 {count} 份尚未核对。")
@@ -264,6 +280,17 @@ def open_output_folder(path):
         return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     subprocess.Popen([opener, folder])
+
+
+def show_skipped_files(parent, skipped):
+    """List files that were not imported, with one reason each."""
+    lines = [f"{path}：{reason}" for path, reason in skipped]
+    box = QMessageBox(parent)
+    box.setWindowTitle("部分文件未导入")
+    box.setText(f"已跳过 {len(skipped)} 个文件。")
+    box.setInformativeText("\n".join(lines))
+    box.addButton("关闭", QMessageBox.AcceptRole)
+    box.exec()
 
 
 def show_export_result(parent, summary, folder, can_retry):
@@ -629,24 +656,38 @@ class Window(QMainWindow):
                 self.save_error_shown = True
                 QMessageBox.warning(self, "本地保存失败", chinese_message(error))
 
-    def add_paths(self, paths):
+    def add_paths(self, paths, report=False):
         known = {os.path.normcase(os.path.abspath(r["path"])) for r in self.records}
+        skipped = []
+        added = False
         for path in paths:
+            if not path:
+                continue
             key = os.path.normcase(os.path.abspath(path))
-            if Path(path).suffix.lower() in SUPPORTED and key not in known:
-                self.records.append(
-                    {
-                        "path": os.path.abspath(path),
-                        "status": "待识别",
-                        "values": {},
-                        "text": "",
-                    }
-                )
-                known.add(key)
-        self.dirty = True
-        self.refresh()
-        if self.current < 0 and self.records:
-            self.table.selectRow(0)
+            if Path(path).suffix.lower() not in SUPPORTED:
+                skipped.append((os.path.abspath(path), "不支持的文件格式"))
+                continue
+            if key in known:
+                skipped.append((os.path.abspath(path), "文件已在列表中"))
+                continue
+            self.records.append(
+                {
+                    "path": os.path.abspath(path),
+                    "status": "待识别",
+                    "values": {},
+                    "text": "",
+                }
+            )
+            known.add(key)
+            added = True
+        if added:
+            self.dirty = True
+            self.refresh()
+            if self.current < 0 and self.records:
+                self.table.selectRow(0)
+        if report and skipped:
+            show_skipped_files(self, skipped)
+        return skipped
 
     def import_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -655,7 +696,7 @@ class Window(QMainWindow):
             "",
             "扫描件 (*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff)",
         )
-        self.add_paths(paths)
+        self.add_paths(paths, report=True)
 
     def import_folder(self):
         folder = QFileDialog.getExistingDirectory(
@@ -664,11 +705,8 @@ class Window(QMainWindow):
         if folder:
             try:
                 self.add_paths(
-                    sorted(
-                        str(p)
-                        for p in Path(folder).rglob("*")
-                        if p.is_file() and p.suffix.lower() in SUPPORTED
-                    )
+                    sorted(str(p) for p in Path(folder).rglob("*") if p.is_file()),
+                    report=True,
                 )
             except OSError as e:
                 QMessageBox.warning(self, "文件夹读取失败", chinese_message(e))
@@ -692,18 +730,22 @@ class Window(QMainWindow):
                 item = QTableWidgetItem(value)
                 item.setToolTip(r["path"] if col == 0 else hint)
                 if col == 1:
-                    item.setForeground(
-                        QColor("#18765d" if r["status"] == "已核对" else "#b17829")
-                    )
+                    if r["status"] in ("已核对", "已识别"):
+                        color = "#18765d"
+                    elif r["status"] in ("失败", "处理失败", STOPPED):
+                        color = "#a33b32"
+                    else:
+                        color = "#b17829"
+                    item.setForeground(QColor(color))
                 self.table.setItem(row, col, item)
             self.table.setRowHeight(row, 44)
         if self.current >= 0:
             self.table.selectRow(self.current)
         self.table.blockSignals(False)
         reviewed = sum(r["status"] == "已核对" for r in self.records)
-        done = sum(bool(r.get("text")) for r in self.records)
+        recognized = sum(r["status"] == "已识别" for r in self.records)
         self.metrics.setText(
-            f"{len(self.records):02d}  份扫描件     /     {done:02d}  已识别     /     {reviewed:02d}  已核对"
+            f"{len(self.records):02d}  份扫描件     /     {recognized:02d}  已识别     /     {reviewed:02d}  已核对"
         )
         self.empty.setVisible(not self.records)
         self.review_btn.setEnabled(
@@ -857,11 +899,7 @@ class Window(QMainWindow):
     def start(self):
         if self.busy():
             return
-        jobs = [
-            (i, r["path"])
-            for i, r in enumerate(self.records)
-            if r["status"] in ("待识别", "处理失败")
-        ]
+        jobs = [(i, r["path"]) for i, r in enumerate(self.records) if needs_ocr(r)]
         if not jobs:
             QMessageBox.information(
                 self, "没有待处理文件", "请导入新文件。已识别文件不会被覆盖。"
@@ -870,6 +908,17 @@ class Window(QMainWindow):
         self.launch_jobs(jobs)
 
     def received(self, index, result):
+        if result.get("status") == STOPPED:
+            record = self.records[index]
+            record["status"] = STOPPED
+            record["warning"] = result.get("warning") or STOPPED
+            self.dirty = True
+            self.progress.setValue(self.progress.value() + 1)
+            if self.current == index:
+                self.load_record()
+            else:
+                self.refresh()
+            return
         if self.use_template and result.get("values"):
             for field, value in list(result["values"].items()):
                 converted = standard_value(field, value, self.choices.get(field, []))
@@ -884,6 +933,13 @@ class Window(QMainWindow):
             self.choices.get("归档单位", []) if self.use_template else [],
             self.auto_unit,
         )
+        if result.get("status") != FAILED:
+            result["status"] = classify_recognition(
+                self.fields,
+                result.get("values") or {},
+                result.get("evidence") or {},
+                result.get("confidence"),
+            )
         self.records[index].update(result)
         self.records[index]["export_status"] = ""
         self.records[index]["export_path"] = ""
@@ -897,8 +953,12 @@ class Window(QMainWindow):
             self.refresh()
 
     def finished(self):
+        stopped = self.worker is not None and self.worker.stopped
         self.set_busy(False)
-        self.status.setText("本轮处理结束 · 请核对字段后导出 Excel")
+        if stopped:
+            self.status.setText("已停止。已完成的结果已保留，当前文件可重新识别。")
+        else:
+            self.status.setText("本轮处理结束 · 请核对字段后导出 Excel")
         self.load_record()
         self.save()
         if self._export_after_ocr:
@@ -1014,13 +1074,15 @@ class Window(QMainWindow):
         if not folder:
             return
         self.export_folder = folder
+        self.dirty = True
+        self.save()
         self._start_export(indexes)
 
     def _export_json(self):
         records = [
             record
             for record in self.records
-            if record.get("text") and record["status"] not in ("处理失败", "待识别")
+            if record.get("text") and not not_exportable(record)
         ]
         if not records:
             QMessageBox.information(
@@ -1090,8 +1152,7 @@ class Window(QMainWindow):
         indexes = [
             index
             for index, record in enumerate(self.records)
-            if record.get("export_error")
-            or record.get("status") in ("处理失败", "待识别")
+            if record.get("export_error") or needs_ocr(record)
         ]
         if not indexes:
             QMessageBox.information(self, "没有失败文件", "当前没有需要重试的文件。")
@@ -1099,12 +1160,7 @@ class Window(QMainWindow):
         if not self.export_folder:
             self.export(only_indexes=indexes, confirm=False)
             return
-        need_ocr = [
-            index
-            for index in indexes
-            if self.records[index].get("status") in ("处理失败", "待识别")
-            or not self.records[index].get("text")
-        ]
+        need_ocr = [index for index in indexes if needs_ocr(self.records[index])]
         self._export_indexes = indexes
         if need_ocr:
             self._export_after_ocr = True
@@ -1125,7 +1181,7 @@ class Window(QMainWindow):
     def export_finished(self):
         self.set_busy(False)
         self.refresh()
-        stopped = self.export_worker.isInterruptionRequested()
+        stopped = self.export_worker.stopped
         indexes = [
             index for index in (self._export_indexes or []) if index < len(self.records)
         ]
@@ -1148,7 +1204,7 @@ class Window(QMainWindow):
         self.status.setText(text.splitlines()[0])
         self.save()
         can_retry = any(record.get("export_error") for record in batch) or any(
-            record.get("status") in ("处理失败", "待识别") for record in batch
+            needs_ocr(record) for record in batch
         )
         if show_export_result(self, text, self.export_folder, can_retry) == "retry":
             self.retry_failed()
@@ -1161,7 +1217,7 @@ class Window(QMainWindow):
             return
         records = []
         for index, record in enumerate(self.records):
-            if record.get("text") and record["status"] not in ("处理失败", "待识别"):
+            if record.get("text") and not not_exportable(record):
                 item = copy.deepcopy(record)
                 item["export_order"] = index + 1
                 records.append(item)
@@ -1214,11 +1270,13 @@ class Window(QMainWindow):
         dlg.setWindowTitle("采集模板与本地模型")
         dlg.resize(640, 820)
         layout = QVBoxLayout(dlg)
-        layout.addWidget(label("导出格式", "section"))
-        mode = QComboBox()
-        mode.addItems(["标准模板（保留工作表、表头和下拉字典）"])
-        mode.setEnabled(False)
-        layout.addWidget(mode)
+        layout.addWidget(label("标准模板", "section"))
+        format_hint = label(
+            "按所选模板的工作表、表头和下拉字典导出。模板缺失或损坏时导出保持停用。",
+            "subtitle",
+        )
+        format_hint.setWordWrap(True)
+        layout.addWidget(format_hint)
         path_edit = QLineEdit(self.template_path)
         path_edit.setReadOnly(True)
         layout.addWidget(path_edit)
@@ -1245,10 +1303,7 @@ class Window(QMainWindow):
             default_inputs.clear()
             for field in DEFAULTS:
                 options = list((choices or {}).get(field) or [])
-                if mode.currentIndex() == 0 and options:
-                    widget = ChoiceEdit(options)
-                else:
-                    widget = QLineEdit()
+                widget = ChoiceEdit(options) if options else QLineEdit()
                 widget.setObjectName("default:" + field)
                 widget.setText(existing.get(field, DEFAULTS[field]))
                 defaults_form.addRow(field, widget)
@@ -1256,7 +1311,7 @@ class Window(QMainWindow):
 
         def sync_fields():
             choices = {}
-            if mode.currentIndex() == 0 and sheets.currentText():
+            if sheets.currentText():
                 try:
                     meta = inspect_template(path_edit.text(), sheets.currentText())
                 except Exception:
@@ -1264,7 +1319,7 @@ class Window(QMainWindow):
                 if meta is not None:
                     edit.setPlainText("\n".join(meta["headers"]))
                     choices = meta["choices"]
-            edit.setReadOnly(mode.currentIndex() == 0)
+            edit.setReadOnly(True)
             target = sheets.currentText() or DEFAULT_SHEET
             defaults_hint.setText(
                 f"导出目标表默认是「{DEFAULT_SHEET}」，当前为「{target}」。"
@@ -1320,7 +1375,6 @@ class Window(QMainWindow):
         defaults_scroll.setWidget(defaults_host)
         layout.addWidget(defaults_scroll)
         sheets.currentTextChanged.connect(sync_fields)
-        mode.currentIndexChanged.connect(sync_fields)
         try:
             load_template(self.template_path, self.template_sheet or DEFAULT_SHEET)
         except Exception as error:
@@ -1335,16 +1389,15 @@ class Window(QMainWindow):
         model.setPlaceholderText("留空使用离线 OCR 与规则")
         layout.addWidget(model)
         note = label(
-            "标准模式只填选中的目录表，其他目录表和字典保留。\n日期按有效年月日写入，字典字段从下拉项选择。\n本地模型仅连接127.0.0.1；通用模型需提前安装。\n切换表头后，已有同名字段保留，新增字段重新分析并进入待核对。",
+            "只填选中的目录表，其他目录表和字典保留。\n日期按有效年月日写入，字典字段从下拉项选择。\n本地模型仅连接127.0.0.1；通用模型需提前安装。\n切换表头后，已有同名字段保留，新增字段重新分析。必填项齐全且置信度达到 0.85 为已识别，否则为待核对。",
             "subtitle",
         )
         note.setWordWrap(True)
         layout.addWidget(note)
 
         def commit_settings():
-            use_template_now = mode.currentIndex() == 0
             choices = {}
-            if use_template_now and sheets.currentText():
+            if sheets.currentText():
                 try:
                     choices = inspect_template(path_edit.text(), sheets.currentText())[
                         "choices"
@@ -1352,10 +1405,7 @@ class Window(QMainWindow):
                 except Exception as error:
                     QMessageBox.warning(dlg, "模板读取失败", chinese_message(error))
                     return
-            cleaned, error = validate_defaults(
-                current_default_texts(),
-                choices if use_template_now else {},
-            )
+            cleaned, error = validate_defaults(current_default_texts(), choices)
             if error:
                 QMessageBox.warning(dlg, "默认值无效", error)
                 return
@@ -1368,7 +1418,6 @@ class Window(QMainWindow):
         layout.addWidget(buttons)
         if dlg.exec() != QDialog.Accepted:
             return
-        use_template = mode.currentIndex() == 0
         fields = list(
             dict.fromkeys(
                 line.strip() for line in edit.toPlainText().splitlines() if line.strip()
@@ -1380,33 +1429,29 @@ class Window(QMainWindow):
             )
             return
         try:
-            if use_template:
-                import hashlib, shutil
+            import hashlib, shutil
 
-                incoming = Path(path_edit.text())
-                dest = (
-                    self.state_path.parent
-                    / "templates"
-                    / (hashlib.sha256(incoming.read_bytes()).hexdigest()[:16] + ".xlsx")
-                )
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                if incoming.resolve() != dest.resolve():
-                    shutil.copy2(incoming, dest)
-                self.template_path = str(dest)
-                self.template_sheet = sheets.currentText()
-                meta = inspect_template(dest, self.template_sheet)
-                fields = meta["headers"]
-                self.choices = meta["choices"]
-            else:
-                self.choices = {}
+            incoming = Path(path_edit.text())
+            dest = (
+                self.state_path.parent
+                / "templates"
+                / (hashlib.sha256(incoming.read_bytes()).hexdigest()[:16] + ".xlsx")
+            )
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if incoming.resolve() != dest.resolve():
+                shutil.copy2(incoming, dest)
+            self.template_path = str(dest)
+            self.template_sheet = sheets.currentText()
+            meta = inspect_template(dest, self.template_sheet)
+            fields = meta["headers"]
+            self.choices = meta["choices"]
         except Exception as e:
             QMessageBox.warning(self, "模板保存失败", chinese_message(e))
             return
-        self.use_template = use_template
+        self.use_template = True
         self.file_size_unit = size_unit.currentText()
-        if use_template:
-            self.template_notice = None
-            self._apply_template_banner()
+        self.template_notice = None
+        self._apply_template_banner()
         if fields != self.fields:
             self.fields = fields
             for record in self.records:
@@ -1422,7 +1467,12 @@ class Window(QMainWindow):
                     for k, v in candidates.items():
                         record["values"].setdefault(k, v)
                     record["evidence"] = evidence
-                    record["status"] = "待核对"
+                    record["status"] = classify_recognition(
+                        fields,
+                        record["values"],
+                        evidence,
+                        record.get("confidence"),
+                    )
                     record["warning"] = "；".join(warnings)
         for record in self.records:
             link_record(

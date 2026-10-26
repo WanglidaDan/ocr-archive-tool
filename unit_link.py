@@ -56,6 +56,8 @@ def link_record(record, options, enabled=True):
         old.append(warning)
     record["warning"] = "；".join(old)
     previous = record.get("status")
-    if record.get("text") and (changed or warning):
+    # A reviewed record goes back to 待核对 when the linked unit changes.
+    # A fresh 已识别 result is left to the recognition rule.
+    if previous == "已核对" and record.get("text") and (changed or warning):
         record["status"] = "待核对"
     return changed or record.get("status") != previous
