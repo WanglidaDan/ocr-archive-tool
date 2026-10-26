@@ -36,7 +36,7 @@ from batch_export import export_separate
 from unit_link import link_record
 from extraction import canonical, normalize_date, extract_details
 from template_io import inspect_template, export_template, standard_value
-from core import DEFAULT_FIELDS, SUPPORTED, Processor, Cancelled, export_xlsx
+from core import DEFAULT_FIELDS, SUPPORTED, Processor, Cancelled, VERSION
 
 STYLE = """
 QWidget {font-family:"Microsoft YaHei UI","Noto Sans CJK SC","Arial";font-size:13px;color:#243b43;}
@@ -135,7 +135,7 @@ class Worker(QThread):
                     "values": {},
                     "evidence": {},
                     "ocr_rows": [],
-                    "engine_version": "0.2",
+                    "engine_version": VERSION,
                 }
             self.result.emit(index, result)
 
@@ -164,10 +164,19 @@ class ExportWorker(QThread):
             self.item.emit(index, result)
 
 
+def template_unavailable_message(path, reason):
+    shown = path or "（未记录路径）"
+    if reason == "missing":
+        detail = f"找不到已保存的导出模板：{shown}"
+    else:
+        detail = f"导出模板无法读取（文件已损坏或不是有效的 Excel）：{shown}"
+    return detail + "。已改为自定义核对模式。请在「字段与模型设置」中重新选择模板。"
+
+
 class Window(QMainWindow):
     def __init__(self, state_path=None):
         super().__init__()
-        self.setWindowTitle("档序 ArchiveDesk 0.3 · 离线档案采集")
+        self.setWindowTitle(f"档序 ArchiveDesk {VERSION} · 离线档案采集")
         self.resize(1460, 920)
         self.setMinimumSize(1100, 720)
         self.state_path = (
@@ -191,12 +200,11 @@ class Window(QMainWindow):
         self.auto_unit = True
         self.template_path = str(builtin)
         self.template_sheet = "管理类_件"
-        self.use_template = builtin.exists()
+        self.use_template = False
         self.choices = {}
-        if self.use_template:
-            meta = inspect_template(self.template_path, self.template_sheet)
-            self.fields = meta["headers"]
-            self.choices = meta["choices"]
+        self.template_notice = None
+        self._template_notice_shown = False
+        self._try_builtin_template(builtin)
         try:
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
             self.fields = state["fields"]
@@ -205,12 +213,8 @@ class Window(QMainWindow):
             self.auto_unit = state.get("auto_unit", True)
             self.use_template = state.get("use_template", False)
             saved_template = state.get("template_path", self.template_path)
-            if Path(saved_template).exists():
-                self.template_path = saved_template
             self.template_sheet = state.get("template_sheet", self.template_sheet)
-            if self.use_template:
-                meta = inspect_template(self.template_path, self.template_sheet)
-                self.choices = meta["choices"]
+            self._try_saved_template(saved_template)
         except (OSError, ValueError, KeyError):
             pass
         for record in self.records:
@@ -243,7 +247,7 @@ class Window(QMainWindow):
         security.setWordWrap(True)
         nav.addWidget(security)
         nav.addSpacing(20)
-        nav.addWidget(label("桌面试用版  /  0.3", "muted"))
+        nav.addWidget(label(f"桌面试用版  /  {VERSION}", "muted"))
         main.addWidget(rail)
         content = QVBoxLayout()
         content.setContentsMargins(30, 28, 30, 24)
@@ -355,16 +359,16 @@ class Window(QMainWindow):
         self.progress = QProgressBar()
         self.progress.hide()
         content.addWidget(self.progress)
-        self.status = label(
+        ready = (
             "就绪 · "
             + (
                 "标准模板：" + self.template_sheet
                 if self.use_template
                 else "自定义核对工作簿"
             )
-            + " · 所有材料保留在本机",
-            "subtitle",
+            + " · 所有材料保留在本机"
         )
+        self.status = label(self.template_notice or ready, "subtitle")
         content.addWidget(self.status)
         self.build_form()
         self.refresh()
@@ -1003,6 +1007,57 @@ class Window(QMainWindow):
         self.dirty = True
         self.load_record()
         self.save()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.template_notice and not self._template_notice_shown:
+            self._template_notice_shown = True
+            notice = self.template_notice
+            QTimer.singleShot(
+                0, lambda: QMessageBox.warning(self, "请重新选择模板", notice)
+            )
+
+    def _try_builtin_template(self, builtin):
+        if not builtin.exists():
+            self.use_template = False
+            return
+        try:
+            meta = inspect_template(self.template_path, self.template_sheet)
+        except Exception:
+            self._fallback_from_template(
+                template_unavailable_message(self.template_path, "unreadable")
+            )
+            return
+        self.use_template = True
+        self.fields = meta["headers"]
+        self.choices = meta["choices"]
+        self.template_notice = None
+
+    def _try_saved_template(self, saved_template):
+        if not self.use_template:
+            self.choices = {}
+            self.template_notice = None
+            return
+        if not saved_template or not Path(saved_template).exists():
+            shown = saved_template or self.template_path
+            self.template_path = str(shown)
+            self._fallback_from_template(template_unavailable_message(shown, "missing"))
+            return
+        self.template_path = str(saved_template)
+        try:
+            meta = inspect_template(self.template_path, self.template_sheet)
+        except Exception:
+            self._fallback_from_template(
+                template_unavailable_message(self.template_path, "unreadable")
+            )
+            return
+        self.choices = meta["choices"]
+        self.template_notice = None
+
+    def _fallback_from_template(self, message):
+        self.use_template = False
+        self.choices = {}
+        self.template_notice = message
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

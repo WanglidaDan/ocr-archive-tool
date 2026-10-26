@@ -5,9 +5,10 @@ import re
 import urllib.request
 from pathlib import Path
 
-DEFAULT_FIELDS = ["文件名称", "文号", "日期", "责任单位", "页数", "备注"]
 from extraction import extract, extract_details, reading_rows
 
+VERSION = "0.3"
+DEFAULT_FIELDS = ["文件名称", "文号", "日期", "责任单位", "页数", "备注"]
 SUPPORTED = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
 
 
@@ -155,7 +156,7 @@ class Processor:
             "confidence": round(min(scores), 3),
             "evidence": evidence,
             "ocr_rows": rows,
-            "engine_version": "0.3",
+            "engine_version": VERSION,
             "warning": "；".join(dict.fromkeys(warnings)),
             "status": "待核对",
         }

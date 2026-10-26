@@ -20,6 +20,27 @@ NUMERIC = {
 DATES = {"文件日期", "日期", "成文日期", "形成日期", "发文日期", "起日期", "止日期"}
 
 
+def _numeric_bound(formula):
+    """Return a plain numeric limit, or None when the bound is not a number.
+
+    Data validations sometimes store formula1/formula2 as a formula or a cell
+    reference (TODAY(), $A$1). Those cannot be compared with float(); skip the
+    bound instead of failing the export.
+    """
+    if not formula:
+        return None
+    try:
+        return float(formula)
+    except (TypeError, ValueError):
+        return None
+
+
+def _outside_bounds(value, formula1, formula2):
+    low = _numeric_bound(formula1)
+    high = _numeric_bound(formula2)
+    return (low is not None and value < low) or (high is not None and value > high)
+
+
 def standard_value(field, value, choices):
     # Preserve the provided dictionary: do not invent a new classification item.
     if (
@@ -119,9 +140,7 @@ def export_template(path, records, template_path, sheet):
             serial = to_excel(datetime.fromisoformat(value), book.epoch)
             for dv in ws.data_validations.dataValidation:
                 if dv.type == "date" and address in dv.sqref:
-                    if (dv.formula1 and serial < float(dv.formula1)) or (
-                        dv.formula2 and serial > float(dv.formula2)
-                    ):
+                    if _outside_bounds(serial, dv.formula1, dv.formula2):
                         raise ValueError(field + "超出原模板日期范围")
             # The uploaded template has General date cells. ISO text preserves
             # their original style instead of adding a date format to styles.xml.
@@ -139,9 +158,7 @@ def export_template(path, records, template_path, sheet):
                 raise ValueError(field + "必须是有效非负数值")
             for dv in ws.data_validations.dataValidation:
                 if dv.type in ("whole", "decimal") and address in dv.sqref:
-                    if (dv.formula1 and number < float(dv.formula1)) or (
-                        dv.formula2 and number > float(dv.formula2)
-                    ):
+                    if _outside_bounds(number, dv.formula1, dv.formula2):
                         raise ValueError(field + "超出原模板范围")
             patches[address] = (
                 "n",

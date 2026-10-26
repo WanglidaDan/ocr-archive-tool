@@ -28,11 +28,14 @@ Windows 开源源码版。
 
 原 0.3 版本曾完成 Linux 环境单元测试、模拟扫描及模板格式验证。本次发布不表示已通过真实 Windows 设备验收；OCR 结果仍需核对，档案系统实际导入应另行测试。
 
-源码中的部分集成测试引用私有标准模板或独立模拟图像；这些文件未公开，不能直接运行全部测试。纯提取测试可运行：
+测试不依赖未公开的业务模板或真实扫描件。示例模板由测试用 openpyxl 生成（含责任单位等下拉字段），扫描图由 Pillow 按本机中文字体绘制。Windows 上可运行全部测试：
 
 ```bat
-.venv\Scripts\python.exe -m unittest discover -s tests -p test_extraction.py
+set QT_QPA_PLATFORM=offscreen
+.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
 ```
+
+Linux 需要中文字体（例如 `fonts-wqy-microhei`）以及 Qt offscreen 平台库。GitHub Actions 在 Python 3.11 上执行同一套测试。
 
 ## 许可证
 

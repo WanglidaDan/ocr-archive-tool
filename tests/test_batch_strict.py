@@ -2,10 +2,12 @@ import sys, unittest, tempfile, zipfile, re
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from batch_export import export_separate
 from extraction import extract_details
+from fixtures import example_template
 
-TEMPLATE = Path(__file__).parents[1] / "templates/standard_template.xlsx"
+TEMPLATE = example_template()
 
 
 class StrictBatchTests(unittest.TestCase):

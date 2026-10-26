@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core import extract, export_xlsx, DEFAULT_FIELDS, Processor, Cancelled, local_llm
+from fixtures import example_scan
 
 
 class Tests(unittest.TestCase):
@@ -70,11 +72,7 @@ class Tests(unittest.TestCase):
 
     def test_cancel(self):
         with self.assertRaises(Cancelled):
-            Processor().recognize(
-                Path(__file__).parents[1] / "samples" / "sample_scan.png",
-                DEFAULT_FIELDS,
-                lambda: True,
-            )
+            Processor().recognize(example_scan(), DEFAULT_FIELDS, lambda: True)
 
 
 if __name__ == "__main__":
