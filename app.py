@@ -12,7 +12,7 @@ from batch_export import export_separate
 from unit_link import link_record
 from extraction import canonical, normalize_date, extract_details
 from template_io import inspect_template, export_template, standard_value
-from core import DEFAULT_FIELDS, SUPPORTED, Processor, Cancelled, export_xlsx
+from core import DEFAULT_FIELDS, SUPPORTED, Processor, Cancelled, assemble_fields, export_xlsx
 
 STYLE='''
 QWidget {font-family:"Microsoft YaHei UI","Noto Sans CJK SC","Arial";font-size:13px;color:#243b43;}
@@ -58,15 +58,15 @@ class ChoiceEdit(QComboBox):
 
 class Worker(QThread):
     result=Signal(int,object); message=Signal(str)
-    def __init__(self, jobs, fields, model):
-        super().__init__(); self.jobs=jobs; self.fields=fields; self.model=model
+    def __init__(self, jobs, fields, model, enhanced_rules=True):
+        super().__init__(); self.jobs=jobs; self.fields=fields; self.model=model; self.enhanced_rules=enhanced_rules
     def run(self):
         processor=Processor()
         for index,path in self.jobs:
             if self.isInterruptionRequested():break
             try:
                 self.message.emit('正在处理 · '+Path(path).name)
-                result=processor.recognize(path,self.fields,self.isInterruptionRequested,self.message.emit,self.model)
+                result=processor.recognize(path,self.fields,self.isInterruptionRequested,self.message.emit,self.model,enhanced_rules=self.enhanced_rules)
             except Cancelled:break
             except Exception as error:result={'status':'处理失败','warning':str(error),'text':'','values':{},'evidence':{},'ocr_rows':[],'engine_version':'0.2'}
             self.result.emit(index,result)
@@ -89,13 +89,14 @@ class Window(QMainWindow):
         self.state_path=Path(state_path) if state_path else Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'ArchiveDesk'/'project.json'
         self.fields=DEFAULT_FIELDS.copy(); self.records=[]; self.current=-1; self.page=0; self.worker=None; self.export_worker=None; self.model=''; self.loading=False; self.dirty=False; self.save_error_shown=False
         builtin=Path(__file__).resolve().parent/'templates/standard_template.xlsx'
-        self.auto_unit=True; self.template_path=str(builtin); self.template_sheet='管理类_件'; self.use_template=builtin.exists(); self.choices={}
+        self.auto_unit=True; self.enhanced_rules=True; self.template_path=str(builtin); self.template_sheet='管理类_件'; self.use_template=builtin.exists(); self.choices={}
         if self.use_template:
             meta=inspect_template(self.template_path,self.template_sheet); self.fields=meta['headers']; self.choices=meta['choices']
         try:
             state=json.loads(self.state_path.read_text(encoding='utf-8'))
             self.fields=state['fields']; self.records=state['records']; self.model=state.get('model','')
             self.auto_unit=state.get('auto_unit',True)
+            self.enhanced_rules=state.get('enhanced_rules',True)
             self.use_template=state.get('use_template',False)
             saved_template=state.get('template_path',self.template_path)
             if Path(saved_template).exists():self.template_path=saved_template
@@ -139,6 +140,7 @@ class Window(QMainWindow):
         splitter.addWidget(left)
         right=QWidget(); rr=QVBoxLayout(right); rr.setContentsMargins(12,0,0,0); rr.addWidget(label('字段核对','section'))
         self.unit_check=QCheckBox('归档单位跟随责任者（按模板字典匹配）'); self.unit_check.setChecked(self.auto_unit); self.unit_check.toggled.connect(self.toggle_unit); rr.addWidget(self.unit_check)
+        self.rules_check=QCheckBox('公文规则增强（检测框阅读顺序，补题名、责任者、日期、文号、密级）'); self.rules_check.setChecked(self.enhanced_rules); self.rules_check.toggled.connect(self.toggle_rules); rr.addWidget(self.rules_check)
         self.hint=label('自动提取仅作候选，请对照原件确认。','subtitle'); self.hint.setWordWrap(True); rr.addWidget(self.hint)
         formwrap=QWidget(); self.form=QFormLayout(formwrap); self.form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow); self.form.setSpacing(12); self.form.setContentsMargins(0,10,6,10)
         self.form_scroll=QScrollArea(); self.form_scroll.setWidgetResizable(True); self.form_scroll.setWidget(formwrap); rr.addWidget(self.form_scroll,1)
@@ -164,11 +166,24 @@ class Window(QMainWindow):
         self.auto_unit=enabled
         for record in self.records:link_record(record,self.choices.get('归档单位',[]) if self.use_template else [],enabled)
         self.dirty=True; self.load_record();self.save()
+    def toggle_rules(self,enabled):
+        if enabled==self.enhanced_rules:return
+        if any(record.get('text') for record in self.records):
+            if QMessageBox.question(self,'按新规则重算字段','将用当前开关重新提取已识别文件的字段，并替换这些文件上的人工修改。是否继续？')!=QMessageBox.Yes:
+                self.rules_check.blockSignals(True); self.rules_check.setChecked(self.enhanced_rules); self.rules_check.blockSignals(False); return
+        self.enhanced_rules=enabled
+        self.reapply_rules(); self.dirty=True; self.load_record(); self.save()
+    def reapply_rules(self):
+        for record in self.records:
+            if not record.get('text'):continue
+            values,evidence,warnings=assemble_fields(record['text'],self.fields,record.get('pages') or 0,record.get('ocr_rows') or None,self.enhanced_rules)
+            record['values']=values; record['evidence']=evidence; record['warning']='；'.join(dict.fromkeys(warnings)); record['status']='待核对'
+            link_record(record,self.choices.get('归档单位',[]) if self.use_template else [],self.auto_unit)
     def save(self):
         if not self.dirty:return
         try:
             self.state_path.parent.mkdir(parents=True,exist_ok=True)
-            temp=self.state_path.with_suffix('.tmp'); temp.write_text(json.dumps({'fields':self.fields,'records':self.records,'model':self.model,'auto_unit':self.auto_unit,'use_template':self.use_template,'template_path':self.template_path,'template_sheet':self.template_sheet},ensure_ascii=False,indent=2),encoding='utf-8'); temp.replace(self.state_path); self.dirty=False
+            temp=self.state_path.with_suffix('.tmp'); temp.write_text(json.dumps({'fields':self.fields,'records':self.records,'model':self.model,'auto_unit':self.auto_unit,'enhanced_rules':self.enhanced_rules,'use_template':self.use_template,'template_path':self.template_path,'template_sheet':self.template_sheet},ensure_ascii=False,indent=2),encoding='utf-8'); temp.replace(self.state_path); self.dirty=False
         except OSError as error:
             self.status.setText('保存失败，请导出结果备份：'+str(error))
             if not self.save_error_shown:
@@ -240,14 +255,14 @@ class Window(QMainWindow):
     def set_busy(self,enabled):
         for widget in [self.import_btn,self.folder_btn,self.run_btn,self.delete_btn,self.redo_btn]:widget.setEnabled(not enabled)
         for field,widget in self.inputs.items():widget.setEnabled(not enabled and not (field=='归档单位' and self.auto_unit))
-        self.unit_check.setEnabled(not enabled)
+        self.unit_check.setEnabled(not enabled); self.rules_check.setEnabled(not enabled)
         self.stop_btn.setEnabled(enabled); self.progress.setVisible(enabled)
     def reprocess(self):
         if self.busy() or not 0<=self.current<len(self.records):return
         if QMessageBox.question(self,'重新识别当前文件','将使用新版规则重新读取，并替换当前文件的字段和人工修改。是否继续？')!=QMessageBox.Yes:return
         self.launch_jobs([(self.current,self.records[self.current]['path'])])
     def launch_jobs(self,jobs):
-        self.worker=Worker(jobs,self.fields.copy(),self.model); self.worker.result.connect(self.received); self.worker.message.connect(self.status.setText); self.worker.finished.connect(self.finished)
+        self.worker=Worker(jobs,self.fields.copy(),self.model,self.enhanced_rules); self.worker.result.connect(self.received); self.worker.message.connect(self.status.setText); self.worker.finished.connect(self.finished)
         self.progress.setRange(0,len(jobs)); self.progress.setValue(0); self.set_busy(True); self.worker.start(); self.refresh()
     def start(self):
         if self.busy():return
@@ -362,7 +377,7 @@ class Window(QMainWindow):
             for record in self.records:
                 old=record.get('values',{});record['values']={k:v for k,v in old.items() if k in fields}
                 if record.get('text'):
-                    candidates,evidence,warnings=extract_details(record['text'],fields,record.get('pages',0),rows=record.get('ocr_rows') or None)
+                    candidates,evidence,warnings=assemble_fields(record['text'],fields,record.get('pages',0),record.get('ocr_rows') or None,self.enhanced_rules)
                     for k,v in candidates.items():record['values'].setdefault(k,v)
                     record['evidence']=evidence;record['status']='待核对';record['warning']='；'.join(warnings)
         for record in self.records:link_record(record,self.choices.get('归档单位',[]) if self.use_template else [],self.auto_unit)
