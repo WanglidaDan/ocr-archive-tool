@@ -86,11 +86,16 @@ def map_piece(record, choices, order, defaults=None, size_unit="MB"):
     put("页数", values.get("页数"))
     put("正本数量", values.get("正本数量"))
     put("文件编号", values.get("文件编号") or values.get("文号"))
-    put("密级", exact_option(values.get("密级"), choices.get("密级", [])))
+    security = _text(values.get("密级"))
+    from template_io import standard_value
+    option = exact_option(standard_value("密级", security, choices.get("密级", [])), choices.get("密级", []))
+    if security and not option:
+        raise ValueError("密级不在模板字典中，请核对：" + security)
+    put("密级", option)
     put(
         "归档单位",
-        _chosen(responsible, "归档单位", choices)
-        or _chosen(values.get("归档单位"), "归档单位", choices),
+        _chosen(values.get("归档单位"), "归档单位", choices)
+        or _chosen(responsible, "归档单位", choices),
     )
     put(
         "归档单位(系统生成)",

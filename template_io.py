@@ -54,23 +54,38 @@ def standard_value(field, value, choices):
     return value
 
 
+def attach_template_path(detail, path):
+    """Put the template location on its own line: 模板路径：…"""
+    shown = str(path)
+    text = str(detail or "").split("模板路径：", 1)[0]
+    if shown:
+        text = text.replace("：" + shown, "").replace(shown, "")
+    text = text.strip().rstrip("。")
+    if not text:
+        text = "找不到模板"
+    return text + "。\n模板路径：" + shown
+
+
 def _open_workbook(path):
     import zipfile
     from openpyxl import load_workbook
 
     if not Path(path).is_file():
         raise ValueError(
-            "找不到模板："
-            + str(path)
-            + "。导出已停用。请在「字段与模型设置」中重新选择模板。"
+            attach_template_path(
+                "找不到模板。导出已停用。请在「字段与模型设置」中重新选择模板。",
+                path,
+            )
         )
     try:
         return load_workbook(path)
     except zipfile.BadZipFile:
         raise ValueError(
-            "导出模板无法读取（文件已损坏或不是有效的 Excel）。"
-            "导出已停用。请在「字段与模型设置」中重新选择模板。\n"
-            "模板路径：" + str(path)
+            attach_template_path(
+                "导出模板无法读取（文件已损坏或不是有效的 Excel）。"
+                "导出已停用。请在「字段与模型设置」中重新选择模板。",
+                path,
+            )
         )
     except OSError as error:
         from errors import chinese_message
@@ -85,7 +100,10 @@ def inspect_template(path, sheet=None):
     if requested not in names:
         book.close()
         raise ValueError(
-            f"模板中没有「{requested}」工作表，已停止导出，不会改用其他工作表。"
+            attach_template_path(
+                f"模板中没有「{requested}」工作表，已停止导出，不会改用其他工作表。",
+                path,
+            )
         )
     selected = requested
     ws = book[selected]

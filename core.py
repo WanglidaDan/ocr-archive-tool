@@ -74,6 +74,14 @@ def _pdf_tail_incomplete(path):
     return b"%%EOF" not in tail
 
 
+
+def assemble_fields(text, fields, pages, rows=None, enhanced_rules=False):
+    values, evidence, warnings = extract_details(text, fields, pages, rows=rows)
+    if enhanced_rules:
+        from enhanced_rules import apply_enhanced
+        values, evidence, warnings = apply_enhanced(values, evidence, warnings, text, fields, pages, rows)
+    return values, evidence, warnings
+
 class Processor:
     def __init__(self):
         self.engine = None
@@ -191,6 +199,8 @@ class Processor:
                 warnings.append(
                     "本地模型提取失败，已保留OCR与规则结果：" + chinese_message(e)
                 )
+        from enhanced_rules import apply_enhanced
+        values, evidence, warnings = apply_enhanced(values, evidence, warnings, text, fields, len(texts), rows)
         return {
             "text": text,
             "values": values,

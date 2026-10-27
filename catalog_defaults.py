@@ -9,8 +9,8 @@ from unit_link import unit_key
 DEFAULT_SHEET = "管理类_件"
 
 DEFAULTS = {
-    "保管期限": "30年",
-    "载体类型": "纸质",
+    "保管期限": "",
+    "载体类型": "",
     "保密期限": "",
     "模版类型": "",
     "来源": "",

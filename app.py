@@ -1,7 +1,10 @@
 import json
+import hashlib
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QFont, QColor, QPixmap, QImage
@@ -36,6 +39,7 @@ from PySide6.QtWidgets import (
 from batch_export import (
     describe_batch,
     export_mapped_separate,
+    manifest_rows,
     write_export_list,
     write_manifest,
     write_summary,
@@ -58,6 +62,17 @@ from status_model import (
     needs_ocr,
     not_exportable,
 )
+
+
+ORIGINAL_TEMPLATE_SHA256 = "9eea9e889ec934fc5ca6e97083e089a45d2944848498810c2ca5cab956937ac5"
+
+def require_original_template(path):
+    try:
+        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError as error:
+        raise ValueError("无法读取原始 Excel 模板，请重新选择用户提供的原模板。") from error
+    if digest != ORIGINAL_TEMPLATE_SHA256:
+        raise ValueError("所选文件与用户提供的原始 Excel 模板不一致，已停止导出。")
 
 
 def program_directory():
@@ -93,7 +108,18 @@ QTabBar::tab {padding:10px 20px;color:#7b8983;} QTabBar::tab:selected {color:#15
 QScrollArea {border:0;background:white;} QProgressBar {border:0;border-radius:3px;background:#dde8e3;height:6px;text-align:center;}
 QProgressBar::chunk {background:#248775;border-radius:3px;} QSplitter::handle {background:#e4eae6;width:7px;}
 QLabel#pill {background:#ddefe5;color:#22715b;border-radius:10px;padding:6px 12px;font-size:12px;}
-QLabel#banner {background:#c0392b;color:#ffffff;border:1px solid #922b21;border-radius:8px;padding:10px 14px;font-weight:600;}
+QLabel#banner {background:#FDECEA;color:#8A1C14;border:1px solid #F5C6C2;border-radius:8px;padding:8px 16px;font-weight:600;}
+QLabel#progressCaption {color:#1D1D1F;font-weight:600;font-size:13px;}
+QLabel#eta {color:#5E5E66;font-size:12px;}
+QWidget#failCard {background:#FDECEA;border:1px solid #F5C6C2;border-radius:10px;}
+QLabel#failTitle {color:#8A1C14;font-weight:700;}
+QLabel#failReason {color:#8A1C14;}
+QPushButton#disabledExport {background:#E5E5EA;color:#6E6E76;border:1px solid #E5E5EA;}
+QDialog#sheet {background:#FFFFFF;}
+QLabel#sheetTitle {font-size:17px;font-weight:700;color:#1D1D1F;}
+QLabel#sheetSub {color:#5E5E66;font-size:12px;}
+QLabel#reviewWarn {background:#FFF4E0;color:#7A4100;border-radius:10px;padding:12px;}
+QTableWidget#resultTable {background:#FFFFFF;alternate-background-color:#FAFAFB;gridline-color:#E3E3E8;}
 """
 
 
@@ -136,6 +162,27 @@ class ChoiceEdit(QComboBox):
         self.lineEdit().setPlaceholderText(value)
 
 
+def source_page_count(path):
+    """Page count used only for the progress line. Recognition still reads the file."""
+    suffix = Path(path).suffix.lower()
+    try:
+        if suffix == ".pdf":
+            import fitz
+
+            with fitz.open(path) as document:
+                return int(document.page_count)
+        from PIL import Image
+
+        with Image.open(path) as image:
+            return int(getattr(image, "n_frames", 1) or 1)
+    except Exception:
+        return 0
+
+
+_FILE_PROGRESS = re.compile(r"正在识别 第(\d+)个/共(\d+)个 · (.+?)(?: · |$)")
+_PAGE_PROGRESS = re.compile(r"正在识别第\s*(\d+)(?:/(\d+))?\s*页")
+
+
 class Worker(QThread):
     result = Signal(int, object)
     message = Signal(str)
@@ -155,10 +202,13 @@ class Worker(QThread):
                 self.stopped = True
                 break
             prefix = f"正在识别 第{nth}个/共{total}个 · {Path(path).name}"
+            pages = source_page_count(path)
             try:
-                self.message.emit(prefix)
+                self.message.emit(prefix + (f" · 共 {pages} 页" if pages else ""))
 
-                def report(message, prefix=prefix):
+                def report(message, prefix=prefix, pages=pages):
+                    if pages and "正在识别第" in message and "/" not in message:
+                        message = message.replace(" 页", f"/{pages} 页", 1)
                     self.message.emit(prefix + " · " + message)
 
                 result = processor.recognize(
@@ -224,6 +274,7 @@ class ExportWorker(QThread):
                 self.message.emit(
                     f"正在导出 第{nth}个/共{total}个 · {Path(record['path']).name}"
                 )
+                require_original_template(self.template)
                 produced = export_mapped_separate(
                     [record],
                     self.folder,
@@ -274,19 +325,21 @@ def template_unavailable_message(path, reason):
         detail += "。"
     if "重新选择" not in detail:
         detail += "请在「字段与模型设置」中重新选择模板。"
-    return detail + "\n模板路径：" + shown
+    body = detail + "\n模板路径：" + shown
+    headline = "模板有问题，暂时无法导出 Excel"
+    if body.startswith(headline):
+        return body
+    return headline + "\n" + body
 
 
 def confirm_unreviewed(parent, count):
     """Ask before exporting 待核对 files. The count excludes 已识别 and 已核对."""
-    box = QMessageBox(parent)
-    box.setWindowTitle("尚有未核对文件")
-    box.setText(f"有 {count} 份尚未核对。")
-    box.setInformativeText("可以继续导出，也可以返回先核对。")
-    go = box.addButton("继续导出", QMessageBox.YesRole)
-    box.addButton("返回", QMessageBox.NoRole)
-    box.exec()
-    return box.clickedButton() is go
+    dialog = ExportConfirmDialog(parent, count)
+    if dialog.exec() != QDialog.Accepted:
+        return False
+    if hasattr(parent, "overwrite_box"):
+        parent.overwrite_box.setChecked(dialog.overwrite.isChecked())
+    return True
 
 
 def export_succeeded(record):
@@ -306,35 +359,287 @@ def open_output_folder(path):
     subprocess.Popen([opener, folder])
 
 
-def show_skipped_files(parent, skipped):
+def show_skipped_files(parent, skipped, added=0):
     """List files that were not imported, with one reason each."""
-    lines = [f"{path}：{reason}" for path, reason in skipped]
-    box = QMessageBox(parent)
-    box.setWindowTitle("部分文件未导入")
-    box.setText(f"已跳过 {len(skipped)} 个文件。")
-    box.setInformativeText("\n".join(lines))
-    box.addButton("关闭", QMessageBox.AcceptRole)
-    box.exec()
+    dialog = ImportSummaryDialog(parent, added, skipped)
+    dialog.exec()
 
 
 def show_export_result(parent, summary, folder, can_retry):
     """Show the batch result. Return open, retry, or close."""
-    box = QMessageBox(parent)
-    box.setWindowTitle("批量导出结果")
-    box.setText(summary)
-    open_button = box.addButton("打开输出文件夹", QMessageBox.ActionRole)
-    retry_button = None
-    if can_retry:
-        retry_button = box.addButton("只重试失败项", QMessageBox.ActionRole)
-    box.addButton("关闭", QMessageBox.AcceptRole)
-    box.exec()
-    clicked = box.clickedButton()
-    if clicked is open_button:
+    rows = getattr(parent, "_last_manifest_rows", None)
+    dialog = ExportResultDialog(parent, summary, rows, can_retry)
+    dialog.exec()
+    if dialog.action == "open":
         open_output_folder(folder)
-        return "open"
-    if retry_button is not None and clicked is retry_button:
-        return "retry"
-    return "close"
+    return dialog.action or "close"
+
+
+_SKIP_BADGE = {
+    "文件已在列表中": ("重复", "同一文件已在列表中"),
+    "不支持的文件格式": ("格式不支持", "仅支持 PDF 与图片"),
+}
+
+SHEET_STYLE = """
+QDialog {background:#FFFFFF;color:#1D1D1F;}
+QLabel {color:#1D1D1F;}
+QLabel#sheetTitle {font-size:17px;font-weight:700;}
+QLabel#sheetSub {color:#5E5E66;font-size:12px;}
+QLabel#hint {color:#6E6E76;font-size:11px;}
+QLabel#reviewWarn {background:#FFF4E0;color:#7A4100;border-radius:10px;padding:12px;}
+QPushButton {background:#FFFFFF;border:1px solid #E3E3E8;border-radius:8px;padding:0 16px;min-height:32px;font-weight:600;}
+QPushButton#primary {background:#0A66D9;color:#FFFFFF;border:0;}
+QHeaderView::section {background:#FAFAFB;border:0;border-bottom:1px solid #E3E3E8;padding:6px 8px;font-weight:600;color:#5E5E66;}
+QTableWidget {background:#FFFFFF;alternate-background-color:#FFFFFF;gridline-color:#E3E3E8;border:0;}
+"""
+
+
+def _sheet(dialog, title):
+    dialog.setWindowTitle(title)
+    dialog.setObjectName("sheet")
+    dialog.setStyleSheet(SHEET_STYLE)
+    dialog.setModal(True)
+
+
+class ImportSummaryDialog(QDialog):
+    """Import finished. Lists each skipped file and why."""
+
+    def __init__(self, parent, added, skipped):
+        super().__init__(parent)
+        _sheet(self, "部分文件未导入")
+        self.setFixedWidth(440)
+        self.added = added
+        self.skipped = list(skipped)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+        self.heading = QLabel(f"已导入 {added} 份 · 跳过 {len(self.skipped)} 项")
+        self.heading.setObjectName("sheetTitle")
+        layout.addWidget(self.heading)
+        self.lines = QLabel(self._body())
+        self.lines.setWordWrap(True)
+        self.lines.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(self.lines)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        copy = QPushButton("复制跳过清单")
+        copy.clicked.connect(self._copy)
+        buttons.addWidget(copy)
+        close = QPushButton("关闭")
+        close.clicked.connect(self.accept)
+        buttons.addWidget(close)
+        if added:
+            start = QPushButton(f"开始识别 {added} 份")
+            start.setObjectName("primary")
+            start.clicked.connect(self._start)
+            buttons.addWidget(start)
+        layout.addLayout(buttons)
+
+    def _body(self):
+        rows = [f"已跳过 {len(self.skipped)} 个文件。"]
+        for path, reason in self.skipped:
+            badge, detail = _SKIP_BADGE.get(reason, ("跳过", reason))
+            rows.append(f"{badge}  {Path(path).name}  {detail}  {reason}\n{path}")
+        return "\n".join(rows)
+
+    def text(self):
+        return self.heading.text()
+
+    def informativeText(self):
+        return self.lines.text()
+
+    def _copy(self):
+        text = "\n".join(f"{path}\t{reason}" for path, reason in self.skipped)
+        QApplication.clipboard().setText(text)
+
+    def _start(self):
+        self.accept()
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "start"):
+            parent.start()
+
+
+class ExportConfirmDialog(QDialog):
+    """Confirm export. Only the 待核对 count is called out."""
+
+    def __init__(self, parent, count):
+        super().__init__(parent)
+        total = getattr(parent, "_confirm_export_count", count)
+        _sheet(self, "导出前确认")
+        self.setFixedWidth(560)
+        self.count = count
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 16)
+        layout.setSpacing(12)
+        title = QLabel(f"导出 {total} 份 Excel")
+        title.setObjectName("sheetTitle")
+        layout.addWidget(title)
+        sub = QLabel(
+            "一份 PDF 对应一个按模板填好的 Excel。识别失败的文件不导出，会写入结果清单。"
+        )
+        sub.setObjectName("sheetSub")
+        sub.setWordWrap(True)
+        layout.addWidget(sub)
+        layout.addWidget(QLabel("输出文件夹"))
+        folder = getattr(parent, "export_folder", "") or "尚未选择"
+        shown = QLabel(folder)
+        shown.setWordWrap(True)
+        layout.addWidget(shown)
+        remembered = QLabel(
+            "已记住上次的选择" if getattr(parent, "export_folder", "") else ""
+        )
+        remembered.setObjectName("hint")
+        layout.addWidget(remembered)
+        self.overwrite = QCheckBox("覆盖同名文件")
+        checked = bool(getattr(parent, "overwrite_same_name", False))
+        self.overwrite.setChecked(checked)
+        layout.addWidget(self.overwrite)
+        note = QLabel("默认不勾选：已存在时改名为「xxx(1).xlsx」，并写入结果清单")
+        note.setObjectName("hint")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        warn = QLabel(
+            f"还有 {count} 份待核对\n"
+            f"有 {count} 份尚未核对。\n"
+            "待核对的文件也会导出，Excel 按自动提取值填写。可以继续，也可以返回先核对。"
+        )
+        warn.setObjectName("reviewWarn")
+        warn.setWordWrap(True)
+        layout.addWidget(warn)
+        foot = QHBoxLayout()
+        hint = QLabel("导出后在输出文件夹保存结果清单")
+        hint.setObjectName("hint")
+        foot.addWidget(hint)
+        foot.addStretch()
+        back = QPushButton("返回")
+        back.clicked.connect(self.reject)
+        foot.addWidget(back)
+        go = QPushButton("继续")
+        go.setObjectName("primary")
+        go.clicked.connect(self.accept)
+        foot.addWidget(go)
+        layout.addLayout(foot)
+
+    def text(self):
+        return f"还有 {self.count} 份待核对\n有 {self.count} 份尚未核对。"
+
+
+class ExportResultDialog(QDialog):
+    """Closable table: path, Excel name, result, Chinese reason, suggestion."""
+
+    def __init__(self, parent, summary, rows, can_retry):
+        super().__init__(parent)
+        _sheet(self, "导出结果")
+        self.summary = summary or ""
+        self.rows = list(rows or [])
+        self.action = "close"
+        self.resize(1200, 640)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 16, 24, 16)
+        layout.setSpacing(12)
+        success = sum(row.get("结果") == "成功" for row in self.rows)
+        failure = sum(row.get("结果") == "失败" for row in self.rows)
+        if not self.rows:
+            success, failure = _summary_counts(self.summary)
+        total = len(self.rows) or (success + failure)
+        head = QHBoxLayout()
+        title = QLabel("导出结果")
+        title.setObjectName("sheetTitle")
+        head.addWidget(title)
+        counts = QLabel(f"成功 {success} · 失败 {failure} · 共 {total}")
+        counts.setObjectName("sheetTitle")
+        head.addWidget(counts)
+        head.addStretch()
+        layout.addLayout(head)
+        legacy = QLabel(self.summary)
+        legacy.setObjectName("sheetSub")
+        legacy.setWordWrap(True)
+        layout.addWidget(legacy)
+        table = QTableWidget(len(self.rows), 5)
+        table.setObjectName("resultTable")
+        table.setHorizontalHeaderLabels(
+            ["源文件路径", "导出文件名", "结果", "中文原因", "处理建议"]
+        )
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().hide()
+        table.setAlternatingRowColors(True)
+        for index, row in enumerate(self.rows):
+            reason = row.get("原因") or ""
+            name = row.get("导出文件名") or ""
+            if row.get("结果") == "成功" and "（" in name:
+                reason = reason or name.split("（", 1)[-1].rstrip("）")
+            values = [
+                row.get("源文件路径") or row.get("文件名") or "",
+                name or "—",
+                row.get("结果") or "",
+                reason or "—",
+                row.get("建议操作") or "—",
+            ]
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if column == 2:
+                    color = {"成功": "#1E7F3E", "失败": "#C9261C"}.get(value, "#6E6E76")
+                    item.setForeground(QColor(color))
+                table.setItem(index, column, item)
+        layout.addWidget(table, 1)
+        hint = QLabel("输出文件夹已保存处理清单 CSV")
+        hint.setObjectName("hint")
+        layout.addWidget(hint)
+        foot = QHBoxLayout()
+        foot.addStretch()
+        copy = QPushButton("复制失败清单")
+        copy.clicked.connect(lambda: self._copy_failures())
+        foot.addWidget(copy)
+        open_button = QPushButton("打开输出文件夹")
+        open_button.clicked.connect(lambda: self._choose("open"))
+        foot.addWidget(open_button)
+        if can_retry:
+            failed = failure or _summary_counts(self.summary)[1]
+            retry = QPushButton(
+                f"只重试失败项（{failed}）" if failed else "只重试失败项"
+            )
+            retry.setObjectName("primary")
+            retry.clicked.connect(lambda: self._choose("retry"))
+            foot.addWidget(retry)
+        close = QPushButton("关闭")
+        close.clicked.connect(lambda: self._choose("close"))
+        foot.addWidget(close)
+        layout.addLayout(foot)
+
+    def text(self):
+        return self.summary
+
+    def informativeText(self):
+        return ""
+
+    def _choose(self, action):
+        self.action = action
+        self.accept()
+
+    def _copy_failures(self):
+        lines = []
+        for row in self.rows:
+            if row.get("结果") == "失败":
+                lines.append(
+                    f"{row.get('源文件路径') or row.get('文件名')}\t{row.get('原因') or ''}"
+                )
+        if not lines and "失败：" in self.summary:
+            lines = [
+                line
+                for line in self.summary.splitlines()
+                if line and not line.startswith("成功") and line != "失败："
+            ]
+        QApplication.clipboard().setText("\n".join(lines))
+
+
+def _summary_counts(summary):
+    match = re.search(r"成功\s*(\d+)\s*份，失败\s*(\d+)\s*份", summary or "")
+    if not match:
+        return 0, 0
+    return int(match.group(1)), int(match.group(2))
 
 
 class Window(QMainWindow):
@@ -470,7 +775,7 @@ class Window(QMainWindow):
         self.export_btn = button("导出 Excel", self.export, True)
         actions.addWidget(self.export_btn)
         self.summary_btn = button("汇总导出（可选）", self.export_summary)
-        actions.addWidget(self.summary_btn)
+        self.summary_btn.hide()
         self.overwrite_box = QCheckBox("覆盖同名文件")
         self.overwrite_box.setChecked(self.overwrite_same_name)
         self.overwrite_box.toggled.connect(self._set_overwrite)
@@ -549,6 +854,20 @@ class Window(QMainWindow):
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setWidget(formwrap)
         rr.addWidget(self.form_scroll, 1)
+        self.fail_box = QWidget()
+        self.fail_box.setObjectName("failCard")
+        fail_layout = QVBoxLayout(self.fail_box)
+        fail_layout.setContentsMargins(12, 12, 12, 12)
+        self.fail_title = QLabel("识别失败")
+        self.fail_title.setObjectName("failTitle")
+        self.fail_reason = QLabel("")
+        self.fail_reason.setObjectName("failReason")
+        self.fail_reason.setWordWrap(True)
+        fail_layout.addWidget(self.fail_title)
+        fail_layout.addWidget(self.fail_reason)
+        fail_layout.addWidget(button("重试此文件", self.reprocess))
+        self.fail_box.hide()
+        rr.addWidget(self.fail_box)
         self.review_btn = button("确认字段 · 标记已核对", self.review, True)
         rr.addWidget(self.review_btn)
         splitter.addWidget(right)
@@ -556,6 +875,14 @@ class Window(QMainWindow):
         self.progress = QProgressBar()
         self.progress.hide()
         content.addWidget(self.progress)
+        self.progress_caption = label("", "progressCaption")
+        self.progress_caption.hide()
+        content.addWidget(self.progress_caption)
+        self._page_rates = []
+        self._file_rates = []
+        self._page_mark = None
+        self._file_mark = None
+        self._seen_page = None
         ready = (
             "就绪 · 标准模板：" + self.template_sheet + " · 所有材料保留在本机"
             if self.use_template
@@ -688,6 +1015,7 @@ class Window(QMainWindow):
         known = {os.path.normcase(os.path.abspath(r["path"])) for r in self.records}
         skipped = []
         added = False
+        added_count = 0
         for path in paths:
             if not path:
                 continue
@@ -708,13 +1036,14 @@ class Window(QMainWindow):
             )
             known.add(key)
             added = True
+            added_count = added_count + 1
         if added:
             self.dirty = True
             self.refresh()
             if self.current < 0 and self.records:
                 self.table.selectRow(0)
         if report and skipped:
-            show_skipped_files(self, skipped)
+            show_skipped_files(self, skipped, added_count)
         return skipped
 
     def import_files(self):
@@ -776,6 +1105,16 @@ class Window(QMainWindow):
             f"{len(self.records):02d}  份扫描件     /     {recognized:02d}  已识别     /     {reviewed:02d}  已核对"
         )
         self.empty.setVisible(not self.records)
+        retryable = sum(
+            1
+            for record in self.records
+            if record.get("status") in ("失败", "处理失败")
+            or record.get("export_status") == "失败"
+            or record.get("export_error")
+        )
+        self.retry_btn.setText(
+            f"只重试失败项（{retryable}）" if retryable else "只重试失败项"
+        )
         self.review_btn.setEnabled(
             0 <= self.current < len(self.records)
             and bool(self.records[self.current].get("text"))
@@ -806,6 +1145,11 @@ class Window(QMainWindow):
             edit.setToolTip("\n".join(details))
         self._mark_missing_owner()
         self.raw.setPlainText(r.get("text", ""))
+        failed = r.get("status") in ("失败", "处理失败")
+        self.fail_box.setVisible(valid and failed)
+        if failed:
+            self.fail_title.setText(Path(r.get("path", "")).name + " 识别失败")
+            self.fail_reason.setText(r.get("warning") or "识别失败，没有可核对的字段。")
         self.hint.setText(
             r.get("warning", "") or "空白字段需要补充；修改后需重新确认。"
         )
@@ -883,6 +1227,8 @@ class Window(QMainWindow):
         self.stop_btn.setEnabled(enabled)
         self.progress.setVisible(enabled)
         self.progress.setFormat("第%v个/共%m个")
+        if not enabled:
+            self.progress_caption.hide()
         self._apply_export_enabled(enabled)
 
     def _apply_export_enabled(self, busy=False):
@@ -890,6 +1236,16 @@ class Window(QMainWindow):
         if hasattr(self, "export_btn"):
             self.export_btn.setEnabled(allowed)
             self.summary_btn.setEnabled(allowed)
+            if allowed:
+                self.export_btn.setObjectName("primary")
+                self.export_btn.setStyleSheet("")
+            else:
+                self.export_btn.setObjectName("disabledExport")
+                self.export_btn.setStyleSheet(
+                    "QPushButton#disabledExport {background:#E5E5EA;color:#6E6E76;border:1px solid #E5E5EA;}"
+                )
+            self.export_btn.style().unpolish(self.export_btn)
+            self.export_btn.style().polish(self.export_btn)
             tip = "" if allowed or busy else (self.template_notice or "导出已停用。")
             self.export_btn.setToolTip(tip)
             self.summary_btn.setToolTip(tip)
@@ -916,8 +1272,13 @@ class Window(QMainWindow):
     def launch_jobs(self, jobs):
         self.worker = Worker(jobs, self.fields.copy(), self.model)
         self.worker.result.connect(self.received)
-        self.worker.message.connect(self.status.setText)
+        self.worker.message.connect(self._on_worker_message)
         self.worker.finished.connect(self.finished)
+        self._page_rates = []
+        self._file_rates = []
+        self._page_mark = None
+        self._seen_page = None
+        self._file_mark = time.monotonic()
         self.progress.setRange(0, len(jobs))
         self.progress.setValue(0)
         self.set_busy(True)
@@ -935,7 +1296,68 @@ class Window(QMainWindow):
             return
         self.launch_jobs(jobs)
 
+    def _on_worker_message(self, message):
+        self.status.setText(message)
+        self._update_progress_caption(message)
+
+    def _update_progress_caption(self, message):
+        file_match = _FILE_PROGRESS.search(message or "")
+        if not file_match:
+            return
+        nth = int(file_match.group(1))
+        total = int(file_match.group(2))
+        name = file_match.group(3).strip()
+        page_match = _PAGE_PROGRESS.search(message)
+        page_bit = ""
+        remain_pages = 0
+        if page_match:
+            page = int(page_match.group(1))
+            pages = int(page_match.group(2) or 0)
+            page_bit = f"第 {page}/{pages} 页" if pages else f"第 {page} 页"
+            now = time.monotonic()
+            if (
+                self._page_mark is not None
+                and self._seen_page is not None
+                and page != self._seen_page
+            ):
+                self._page_rates.append(now - self._page_mark)
+            self._page_mark = now
+            self._seen_page = page
+            if pages:
+                remain_pages = max(pages - page, 0)
+        bits = [f"第 {nth}/{total} 个"]
+        if page_bit:
+            bits.append(page_bit)
+        bits.append(name)
+        eta = self._remaining_seconds(remain_pages, max(total - nth, 0))
+        if eta is not None:
+            bits.append(f"预计剩余约 {eta} 秒")
+        self.progress_caption.setText(" · ".join(bits))
+        self.progress_caption.show()
+
+    def _remaining_seconds(self, remain_pages, remain_files):
+        if not self._page_rates:
+            return None
+        page_rate = sum(self._page_rates) / len(self._page_rates)
+        file_rate = (
+            sum(self._file_rates) / len(self._file_rates) if self._file_rates else 0
+        )
+        seconds = round(remain_pages * page_rate) + round(remain_files * file_rate)
+        if seconds <= 0:
+            return None
+        return int(seconds)
+
+    def _finish_progress_file(self):
+        if self._file_mark is None:
+            return
+        self._file_rates.append(time.monotonic() - self._file_mark)
+        self._file_mark = time.monotonic()
+        self._page_mark = None
+        self._seen_page = None
+
     def received(self, index, result):
+        if self.worker is not None and self.worker.isRunning():
+            self._finish_progress_file()
         if result.get("status") == STOPPED:
             record = self.records[index]
             record["status"] = STOPPED
@@ -1092,6 +1514,7 @@ class Window(QMainWindow):
         pending = sum(
             self.records[index].get("status") == "待核对" for index in indexes
         )
+        self._confirm_export_count = len(indexes)
         if confirm and pending and not confirm_unreviewed(self, pending):
             return
         folder = QFileDialog.getExistingDirectory(
@@ -1139,11 +1562,10 @@ class Window(QMainWindow):
         import copy
 
         try:
+            require_original_template(self.template_path)
             inspect_template(self.template_path, self.template_sheet or DEFAULT_SHEET)
         except Exception as error:
-            message = chinese_message(error)
-            if "导出已停用" not in message:
-                message += "导出已停用。请在「字段与模型设置」中重新选择模板。"
+            message = template_unavailable_message(self.template_path, error)
             self._fallback_from_template(message)
             self._apply_template_banner()
             self._apply_export_enabled()
@@ -1167,7 +1589,7 @@ class Window(QMainWindow):
             self.file_size_unit,
         )
         self.export_worker.item.connect(self.export_received)
-        self.export_worker.message.connect(self.status.setText)
+        self.export_worker.message.connect(self._on_worker_message)
         self.export_worker.finished.connect(self.export_finished)
         self.progress.setRange(0, len(jobs))
         self.progress.setValue(0)
@@ -1224,13 +1646,13 @@ class Window(QMainWindow):
             write_manifest(
                 self.export_folder, batch, self.export_worker.results, stopped=stopped
             )
-            write_export_list(
-                self.export_folder, batch, self.export_worker.results, stopped=stopped
-            )
         except OSError as error:
             text += "\n导出清单未能写入：" + chinese_message(error)
         self.status.setText(text.splitlines()[0])
         self.save()
+        self._last_manifest_rows = manifest_rows(
+            batch, self.export_worker.results, stopped=stopped
+        )
         can_retry = any(record.get("export_error") for record in batch) or any(
             needs_ocr(record) for record in batch
         )
