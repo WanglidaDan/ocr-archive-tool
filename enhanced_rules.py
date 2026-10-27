@@ -114,8 +114,43 @@ def _pick_date(lines):
             found = _date_in(follow["compact"])
             if found:
                 return found
+    # Contract signature dates may occur after each party. Use them only when
+    # at least two labelled dates in the signature block agree exactly.
+    tail = [line for line in lines if line["page"] == last_page][-18:]
+    signature = next((i for i, line in enumerate(tail)
+                      if re.match(r"^甲方[（(]", line["compact"]) and
+                      any(re.match(r"^乙方[（(]", x["compact"]) for x in tail[i + 1:])), None)
+    if signature is not None:
+        dated = []
+        for line in tail[signature:]:
+            m = re.fullmatch(r"日期[:：]([0-9]{4}年_?[0-9]{1,2}月_?[0-9]{1,2}日)", line["compact"])
+            if m:
+                value = _date_in(m[1].replace("_", ""))
+                if value:
+                    dated.append(value)
+            elif line["compact"].startswith(("日期:", "日期：")):
+                return ""
+        if len(dated) >= 2 and len(set(dated)) == 1:
+            return dated[0]
     # A body date alone does not establish the document date.
     return ""
+
+
+def red_signature_candidate(lines):
+    """Find a two-line institution and date in OCR after red ink removal."""
+    found = set()
+    for first, second, dated in zip(lines, lines[1:], lines[2:]):
+        if first["page"] != second["page"] or second["page"] != dated["page"]:
+            continue
+        if not ORG.fullmatch(first["compact"]) or not ORG.fullmatch(second["compact"]):
+            continue
+        if not second["compact"].endswith(("办公室", "委员会")):
+            continue
+        normalized = re.sub(r"(?<=年)[：:\-](?=\d)", "", dated["compact"])
+        date = _date_in(normalized)
+        if date:
+            found.add((first["compact"] + second["compact"], date))
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def _pick_title(header):
@@ -209,6 +244,10 @@ def _trace(kind: str, value: str, lines) -> dict:
     if not value:
         return empty
     if kind == "日期":
+        for line in lines:
+            candidate = re.sub(r"^日期[:：]", "", line["compact"]).replace("_", "")
+            if _date_in(candidate) == value:
+                return {"raw": line["compact"], "page": line["page"], "line_raw": line["raw"]}
         for line in lines:
             if _date_in(line["compact"]) == value:
                 return {"raw": line["compact"], "page": line["page"], "line_raw": line["raw"]}

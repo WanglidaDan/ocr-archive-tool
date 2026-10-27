@@ -71,8 +71,8 @@ def require_original_template(path):
         digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
     except OSError as error:
         raise ValueError("无法读取原始 Excel 模板，请重新选择用户提供的原模板。") from error
-    if digest != ORIGINAL_TEMPLATE_SHA256:
-        raise ValueError("所选文件与用户提供的原始 Excel 模板不一致，已停止导出。")
+    if digest not in {ORIGINAL_TEMPLATE_SHA256, "771a9a4905382921cc4839904cd0bd52a7d6e9a265983bcd77278247e00d42e2"}:
+        raise ValueError("所选文件与已确认的 Excel 模板不一致，已停止导出。")
 
 
 def program_directory():

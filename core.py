@@ -114,8 +114,10 @@ class Processor:
         if self.engine is None:
             self.engine = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
         texts, scores, rows = [], [], []
+        last_image = None
 
         def page(image, n):
+            nonlocal last_image
             if cancelled():
                 raise Cancelled()
             progress(f"正在识别第 {n} 页")
@@ -124,6 +126,7 @@ class Processor:
                     "单页图像过大，请降低扫描分辨率后重试（建议300 DPI）。"
                 )
             image.thumbnail((2600, 3600))
+            last_image = image.copy()
             # RapidOCR expects OpenCV BGR arrays.
             result, _ = self.engine(np.asarray(image.convert("RGB"))[:, :, ::-1].copy())
             texts.append(
@@ -201,6 +204,47 @@ class Processor:
                 )
         from enhanced_rules import apply_enhanced
         values, evidence, warnings = apply_enhanced(values, evidence, warnings, text, fields, len(texts), rows)
+        # Only retry when a signature and its date are both missing. Keep the
+        # original OCR text and never use the retry for security classification.
+        from extraction import canonical
+        org_fields = [f for f in fields if canonical(f) == "责任单位"]
+        date_fields = [f for f in fields if canonical(f) == "日期"]
+        if (last_image is not None and org_fields and date_fields and
+            all(not values.get(f) for f in org_fields + date_fields)):
+            if cancelled():
+                raise Cancelled()
+            try:
+                rgb = np.asarray(last_image.convert("RGB")).copy()
+                top = int(rgb.shape[0] * 0.45)
+                crop = rgb[top:].copy()
+                red, green, blue = [crop[:, :, i].astype(np.int16) for i in range(3)]
+                red_ink = ((red > 105) & (red > green * 1.25) & (red > blue * 1.20) &
+                           (red - np.minimum(green, blue) > 35))
+                if red_ink.sum() > 100:
+                    crop[red_ink] = 255
+                    progress("正在核对红章遮挡的落款")
+                    retry, _ = self.engine(crop[:, :, ::-1].copy())
+                    retry_items = [{"box": [[float(x), float(y + top)] for x, y in item[0]],
+                                    "text": item[1], "confidence": float(item[2]),
+                                    "page": len(texts)} for item in (retry or [])]
+                    retry_rows = reading_rows(retry_items)
+                    from enhanced_rules import _lines, red_signature_candidate
+                    signature = red_signature_candidate(_lines("", retry_rows, from_cells=True))
+                    if signature:
+                        org, date = signature
+                        for field in org_fields + date_fields:
+                            val = org if field in org_fields else date
+                            values[field] = val
+                            evidence[field] = {"status": "待核对", "candidates": [{
+                                "raw": " / ".join(item["text"] for item in retry_items),
+                                "value": val, "page": len(texts), "source": "红章区域二次OCR",
+                                "confidence": None, "boxes": [item["box"] for item in retry_items],
+                                "issue": "请对照原件核对"}]}
+                        warnings.append("红章遮挡的落款通过二次识别提取，请对照原件核对。")
+            except Cancelled:
+                raise
+            except Exception:
+                warnings.append("红章区域二次识别未完成，请人工核对。")
         return {
             "text": text,
             "values": values,
