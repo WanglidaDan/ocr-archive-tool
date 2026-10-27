@@ -24,8 +24,22 @@ $unpacked = (Get-ChildItem dist/unpacked-base -Recurse -File | Measure-Object Le
 Write-Output "zip_bytes=$($zipItem.Length)"
 Write-Output "unpacked_bytes=$unpacked"
 
-& python -c "import sys; sys.path[:0]=['.', 'tests']; from tools.smoke_batch import write_pdfs; from fixtures import example_template; from pathlib import Path; write_pdfs(Path('dist/smoke-pdfs')); Path('dist/fake-template.xlsx').write_bytes(Path(example_template()).read_bytes())"
-if ($LASTEXITCODE -ne 0) { throw "failed to prepare fake PDFs or template" }
+& python -c "import sys; sys.path[:0]=['.', 'tests']; from fixtures import example_template; from pathlib import Path; Path('dist/fake-template.xlsx').write_bytes(Path(example_template()).read_bytes())"
+if ($LASTEXITCODE -ne 0) { throw "failed to prepare the fixture template" }
+$corpus = Join-Path $root "eval\corpus"
+$expectPath = ""
+if (Test-Path $corpus) {
+  $inputDir = $corpus
+  & python tools/ocr_fields.py --input $corpus --template dist/fake-template.xlsx --output dist/field-expect.json
+  if ($LASTEXITCODE -ne 0) { throw "system python field dump failed" }
+  $expectPath = Join-Path $root "dist\field-expect.json"
+  Write-Output "field_corpus=eval/corpus"
+} else {
+  & python -c "import sys; sys.path[:0]=['.', 'tests']; from tools.smoke_batch import write_pdfs; from pathlib import Path; write_pdfs(Path('dist/smoke-pdfs'))"
+  if ($LASTEXITCODE -ne 0) { throw "failed to prepare synthetic PDFs" }
+  $inputDir = Join-Path $root "dist\smoke-pdfs"
+  Write-Output "field_corpus=10-synthetic"
+}
 
 & python tools/inject_template.py dist/ArchiveDesk-base.zip dist/fake-template.xlsx dist/smoke-injected.zip
 if ($LASTEXITCODE -ne 0) { throw "inject_template.py refused the smoke template" }
@@ -51,14 +65,15 @@ $context | ConvertTo-Json -Depth 4 | Set-Content -Path $contextPath -Encoding ut
 $outDir = Join-Path $app "smoke-out"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $report = Join-Path $app "smoke-report.json"
-$pdfDir = Join-Path $root "dist\smoke-pdfs"
 $runner = Join-Path $app "smoke-run.bat"
+$smokeCmd = "`"$exe`" --smoke --pdf-dir `"$inputDir`" --out-dir `"$outDir`" --report `"$report`" --template `"$template`" --context `"$contextPath`""
+if ($expectPath) { $smokeCmd += " --expect `"$expectPath`"" }
 @(
   "@echo off"
   "set TEMP=%~dp0smoke-temp"
   "set TMP=%~dp0smoke-temp"
   "mkdir `"%TEMP%`" 2>nul"
-  "`"$exe`" --smoke --pdf-dir `"$pdfDir`" --out-dir `"$outDir`" --report `"$report`" --template `"$template`" --context `"$contextPath`""
+  $smokeCmd
   "exit /b %ERRORLEVEL%"
 ) | Set-Content -Path $runner -Encoding ascii
 
@@ -106,6 +121,9 @@ function Grant-BatchLogon([string]$Account) {
 Grant-BatchLogon $smokeUser
 & icacls.exe $root /grant "${smokeUser}:(RX)" | Out-Null
 & icacls.exe (Join-Path $root "dist") /grant "${smokeUser}:(OI)(CI)RX" | Out-Null
+if (Test-Path (Join-Path $root "eval")) {
+  & icacls.exe (Join-Path $root "eval") /grant "${smokeUser}:(OI)(CI)RX" | Out-Null
+}
 if ($LASTEXITCODE -ne 0) { throw "icacls dist failed: $LASTEXITCODE" }
 & icacls.exe $app /grant "${smokeUser}:(OI)(CI)M" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "icacls app failed: $LASTEXITCODE" }

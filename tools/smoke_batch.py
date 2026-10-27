@@ -15,8 +15,9 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from batch_export import export_mapped_separate
 from catalog_defaults import DEFAULT_SHEET
-from core import Processor
+from core import SUPPORTED, Processor
 from template_io import inspect_template
+from tools.ocr_fields import compare_fields
 
 
 def peak_memory_bytes():
@@ -229,13 +230,24 @@ def run_packaged(argv):
     parser.add_argument("--report", required=True)
     parser.add_argument("--template", required=True)
     parser.add_argument("--context")
+    parser.add_argument("--expect")
+    parser.add_argument("--allow-elevated", action="store_true")
     args = parser.parse_args(argv)
     install()
     context = {}
     if args.context and Path(args.context).is_file():
         context = json.loads(Path(args.context).read_text(encoding="utf-8-sig"))
     template = Path(args.template)
-    pdfs = sorted(Path(args.pdf_dir).glob("*.pdf"))
+    folder = Path(args.pdf_dir)
+    pdfs = (
+        sorted(
+            path
+            for path in folder.iterdir()
+            if path.is_file() and path.suffix.lower() in SUPPORTED
+        )
+        if folder.is_dir()
+        else []
+    )
     code = 0
     error = ""
     records = []
@@ -262,7 +274,7 @@ def run_packaged(argv):
             error = "模板不存在：" + str(template)
         elif not pdfs:
             code = 2
-            error = "没有 PDF：" + str(args.pdf_dir)
+            error = "没有可识别的文件：" + str(args.pdf_dir)
         else:
             meta = inspect_template(template, DEFAULT_SHEET)
             processor = Processor()
@@ -310,7 +322,18 @@ def run_packaged(argv):
             "GitHub windows-latest 是 Windows Server，不是干净的 Win10/11。"
             "这台机器自己带 VC++ 运行库，所以下面的 DLL 路径必须来自 zip 内部。"
         ),
+        "fields": {
+            Path(item["path"]).name: item.get("values") or {} for item in records
+        },
     }
+    mismatches = []
+    if args.expect and Path(args.expect).is_file():
+        expected = json.loads(Path(args.expect).read_text(encoding="utf-8-sig"))
+        mismatches = compare_fields(report["fields"], expected)
+        report["field_mismatches"] = mismatches
+        if mismatches and code == 0:
+            code = 6
+            error = "字段与精简前不一致：" + "、".join(mismatches)
     if error:
         report["error"] = error
     for key, value in context.items():
@@ -322,7 +345,7 @@ def run_packaged(argv):
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     _emit(json.dumps(report, ensure_ascii=False))
-    if report["elevated"]:
+    if report["elevated"] and not args.allow_elevated:
         return 4
     if report["remote_socket_attempts"]:
         return 5

@@ -1,9 +1,10 @@
 #!/bin/sh
-# 在本机用 wine 调用 Inno Setup，把基础包目录打成 setup.exe。
+# 在 Linux 上用 wine 调用 Inno Setup 的 ISCC.exe，把基础包打成 setup.exe。
 # 用法：tools/build_installer_local.sh <解压后的基础包目录> <标准模板.xlsx>
 # 基础包目录里要有 ArchiveDesk.exe。模板会复制为该目录下的
 # templates/standard_template.xlsx，然后打进这一份本地安装包。
-# GitHub 上的安装包不带模板；这个脚本只在你自己的电脑上使用。
+# 没有模板就退出。标准模板不要放进仓库或 CI。
+# CI 另用代码生成的假模板编译安装包，只为验证静默安装、启动和卸载。
 
 set -eu
 

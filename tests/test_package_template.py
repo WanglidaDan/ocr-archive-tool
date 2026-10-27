@@ -191,6 +191,109 @@ class PackageTemplateTests(unittest.TestCase):
             self.assertFalse(body["elevated"])
             self.assertIn("模板不存在", body["error"])
 
+    def test_trim_keeps_widgets_models_and_runtime_and_skips_upx(self):
+        import subprocess
+
+        from tools.ocr_fields import compare_fields
+        from tools.stage_windows_dist import main as stage_main
+        from tools.trim_bundle import category
+
+        self.assertIsNone(category(Path("_internal/PySide6/Qt6Widgets.dll")))
+        self.assertIsNone(category(Path("_internal/PySide6/Qt6OpenGL.dll")))
+        self.assertIsNone(category(Path("vcruntime140.dll")))
+        self.assertIsNone(category(Path("models/ch_PP-OCRv4_det_infer.onnx")))
+        self.assertIsNone(
+            category(Path("_internal/PySide6/translations/qtbase_zh_CN.qm"))
+        )
+        self.assertEqual(category(Path("_internal/PySide6/Qt6Quick.dll")), "qt-unused")
+        self.assertEqual(
+            category(Path("_internal/PySide6/translations/qtbase_de.qm")),
+            "qt-unused",
+        )
+        self.assertEqual(category(Path("models/extra.onnx")), "ocr-models")
+        self.assertEqual(
+            category(Path("cv2/opencv_videoio_ffmpeg4100_64.dll")), "opencv-unused"
+        )
+        self.assertEqual(
+            compare_fields({"a": {"题名": "甲"}}, {"a": {"题名": "甲"}}), []
+        )
+        self.assertEqual(
+            compare_fields({"a": {"题名": "甲"}}, {"a": {"题名": "乙"}}), ["a"]
+        )
+        missing = subprocess.run(
+            ["sh", "tools/build_installer_local.sh"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("没有模板", missing.stderr)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            dist = folder / "ArchiveDesk"
+            internal = dist / "_internal" / "PySide6"
+            internal.mkdir(parents=True)
+            (dist / "ArchiveDesk.exe").write_bytes(b"MZ")
+            (dist / "vcruntime140.dll").write_bytes(b"V")
+            for name in (
+                "ch_PP-OCRv4_det_infer.onnx",
+                "ch_PP-OCRv4_rec_infer.onnx",
+                "ch_ppocr_mobile_v2.0_cls_infer.onnx",
+            ):
+                (dist / "_internal" / name).write_bytes(b"model")
+            (dist / "_internal" / "extra.onnx").write_bytes(b"nope")
+            (internal / "Qt6Quick.dll").write_bytes(b"Q" * 100)
+            (internal / "Qt6Widgets.dll").write_bytes(b"W" * 40)
+            code = stage_main(
+                [
+                    "--dist",
+                    str(dist),
+                    "--zip",
+                    str(folder / "out.zip"),
+                    "--skip-dll-check",
+                ]
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue((internal / "Qt6Widgets.dll").is_file())
+            self.assertFalse((internal / "Qt6Quick.dll").exists())
+            self.assertFalse((dist / "_internal" / "extra.onnx").exists())
+            steps = json.loads((folder / "size-steps.json").read_text(encoding="utf-8"))
+            self.assertFalse(steps["upx"])
+            by_name = {item["step"]: item for item in steps["steps"]}
+            self.assertEqual(by_name["qt-unused"]["removed_bytes"], 100)
+            self.assertEqual(by_name["ocr-models"]["removed_bytes"], 4)
+            self.assertEqual(by_name["opencv-unused"]["removed_bytes"], 0)
+            self.assertGreater(
+                by_name["before"]["unpacked_bytes"],
+                by_name["numpy-scipy-extra"]["unpacked_bytes"],
+            )
+
+    def test_packaged_smoke_can_record_an_admin_runner(self):
+        self.addCleanup(offline_guard.uninstall)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            report = folder / "smoke-report.json"
+            args = [
+                "--pdf-dir",
+                str(folder / "pdfs"),
+                "--out-dir",
+                str(folder / "out"),
+                "--report",
+                str(report),
+                "--template",
+                str(folder / "missing.xlsx"),
+            ]
+            with (
+                patch("tools.smoke_batch.is_elevated", return_value=True),
+                patch("sys.stdout", None),
+            ):
+                self.assertEqual(run_packaged(args), 4)
+            with (
+                patch("tools.smoke_batch.is_elevated", return_value=True),
+                patch("sys.stdout", None),
+            ):
+                self.assertEqual(run_packaged([*args, "--allow-elevated"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
