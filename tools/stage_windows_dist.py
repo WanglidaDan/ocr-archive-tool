@@ -1,14 +1,20 @@
 """Turn a PyInstaller onedir folder into the template-free base zip."""
 
 import argparse
+import json
 import os
 import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from tools.trim_bundle import KEEP_ONNX, iter_trim
+
 PACKAGING = ROOT / "packaging"
 REQUIRED_DLLS = ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")
+OPTIONAL_DLLS = ("msvcp140_1.dll", "msvcp140_2.dll", "concrt140.dll", "vcomp140.dll")
 TEMPLATE_NOTE = "请将标准模板放在这里.txt"
 
 
@@ -27,7 +33,7 @@ def _dll_sources():
 def _copy_runtime_dlls(dist):
     copied = []
     missing = []
-    for name in REQUIRED_DLLS:
+    for name in REQUIRED_DLLS + OPTIONAL_DLLS:
         target = dist / name
         internal = dist / "_internal" / name
         if target.is_file() or internal.is_file():
@@ -43,7 +49,8 @@ def _copy_runtime_dlls(dist):
             None,
         )
         if source is None:
-            missing.append(name)
+            if name in REQUIRED_DLLS:
+                missing.append(name)
             continue
         data = source.read_bytes()
         target.write_bytes(data)
@@ -121,6 +128,31 @@ def main(argv=None):
     dist = Path(args.dist)
     info = prepare_dist(dist, copy_dlls=not args.skip_dll_check)
     zip_path = Path(args.zip)
+    steps = []
+
+    def _measure(step, removed):
+        unpacked = directory_size(dist)
+        probe = zip_path.with_name(".measure-" + step + ".zip")
+        zipped = make_zip(dist, probe)
+        probe.unlink()
+        steps.append(
+            {
+                "step": step,
+                "removed_bytes": removed,
+                "unpacked_bytes": unpacked,
+                "zip_bytes": zipped,
+                "upx": False,
+            }
+        )
+
+    _measure("before", 0)
+    for name, removed in iter_trim(dist):
+        _measure(name, removed)
+    present = {path.name.lower() for path in dist.rglob("*.onnx")}
+    missing_models = sorted(KEEP_ONNX - present)
+    if missing_models:
+        raise SystemExit("精简后缺少识别模型：" + "、".join(missing_models))
+    info["onnx"] = len(list(dist.rglob("*.onnx")))
     zip_bytes = make_zip(dist, zip_path)
     unpacked = directory_size(dist)
     report = zip_path.with_name("package-report.txt")
@@ -133,6 +165,10 @@ def main(argv=None):
         "template_xlsx=0",
     ]
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    zip_path.with_name("size-steps.json").write_text(
+        json.dumps({"upx": False, "steps": steps}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     sys.stdout.buffer.write(("\n".join(lines) + "\n").encode("utf-8", "replace"))
     sys.stdout.buffer.flush()
     return 0

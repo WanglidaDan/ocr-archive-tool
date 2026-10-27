@@ -34,6 +34,8 @@ jobs:
             throw "ArchiveDesk.exe --check did not exit within 120 seconds"
           }
           if ($proc.ExitCode -ne 0) { throw "ArchiveDesk.exe --check exited $($proc.ExitCode)" }
+      - name: Require VC++ DLLs inside the zip and no template
+        run: python tools/verify_base_zip.py dist/ArchiveDesk-base.zip
       - name: Upload base zip
         uses: actions/upload-artifact@v4
         with:
@@ -41,6 +43,7 @@ jobs:
           path: |
             dist/ArchiveDesk-base.zip
             dist/package-report.txt
+            dist/size-steps.json
           if-no-files-found: error
 
   smoke:
@@ -59,12 +62,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+      - name: Fetch the synthetic 48-document corpus
+        run: |
+          git fetch --depth 1 origin cursor/ocr-eval-e760
+          git checkout FETCH_HEAD -- eval/corpus
       - uses: actions/download-artifact@v4
         with:
           name: ArchiveDesk-base
           path: dist
-      - name: Headless 10-PDF smoke
-        run: python tools/smoke_batch.py --report dist/smoke-report.json --zip dist/ArchiveDesk-base.zip
+      - name: Headless smoke inside the package
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/run_windows_smoke.ps1
+      - name: Remove the smoke account and firewall rule
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-NetFirewallRule -DisplayName "M2ArchiveDeskOffline" -ErrorAction SilentlyContinue
+          Stop-ScheduledTask -TaskName "M2Smoke" -ErrorAction SilentlyContinue
+          Unregister-ScheduledTask -TaskName "M2Smoke" -Confirm:$false -ErrorAction SilentlyContinue
+          net user m2smoke /delete | Out-Null
       - name: Upload smoke report
         uses: actions/upload-artifact@v4
         with:
@@ -75,12 +91,19 @@ jobs:
   installer:
     needs: base-package
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install fixture tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install openpyxl pillow pymupdf
       - uses: actions/download-artifact@v4
         with:
           name: ArchiveDesk-base
@@ -94,19 +117,33 @@ jobs:
           }
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
-      - name: Compile setup.exe
+      - name: Compile setup.exe with the generated fixture template
         shell: pwsh
         run: |
+          python -c "import sys; sys.path[:0]=['.', 'tests']; from fixtures import example_template; from pathlib import Path; dest = Path('dist/unpacked/ArchiveDesk/templates'); dest.mkdir(parents=True, exist_ok=True); (dest / 'standard_template.xlsx').write_bytes(Path(example_template()).read_bytes())"
+          if ($LASTEXITCODE -ne 0) { throw "fixture template was not written" }
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
           & $iscc "packaging\ArchiveDesk.iss" "/DDistDir=$PWD\dist\unpacked\ArchiveDesk" "/DOutputDir=$PWD\dist"
           $setup = Get-Item dist\ArchiveDesk-setup.exe
-          "setup_bytes=$($setup.Length)" | Tee-Object dist\setup-report.txt
+          @(
+            "setup_bytes=$($setup.Length)"
+            "compression=lzma2/ultra64"
+            "solid=yes"
+            "template=generated-fixture"
+            "standard_template_in_repo=no"
+          ) | Tee-Object dist\setup-report.txt
+      - name: Silent install, headless OCR, uninstall
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/run_windows_install_smoke.ps1
       - name: Upload setup.exe
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ArchiveDesk-setup
           path: |
             dist/ArchiveDesk-setup.exe
             dist/setup-report.txt
-          if-no-files-found: error
+            dist/install-smoke-report.json
+            dist/install.log
+          if-no-files-found: warn

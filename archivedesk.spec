@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller onedir build. Models and Qt/OCR binaries stay inside the folder."""
+"""PyInstaller onedir build. UPX stays off: it breaks Qt and onnxruntime DLLs."""
 
 from PyInstaller.utils.hooks import collect_all
 
@@ -23,6 +23,9 @@ hiddenimports = [
     "PIL",
     "openpyxl",
     "numpy",
+    "tools.offline_guard",
+    "tools.smoke_batch",
+    "tools.ocr_fields",
 ]
 
 for package in (
